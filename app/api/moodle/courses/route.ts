@@ -1,19 +1,52 @@
 import { NextResponse } from "next/server";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 export async function GET() {
-  const moodleUrl = process.env.MOODLE_URL;
-  const token = process.env.MOODLE_TOKEN;
+  let cloudflareEnv: CloudflareEnv | undefined;
+  let cloudflareContextError: unknown;
+
+  try {
+    cloudflareEnv = (await getCloudflareContext({ async: true })).env;
+  } catch (error: unknown) {
+    cloudflareContextError = error;
+  }
+
+  const moodleUrl = cloudflareEnv?.MOODLE_URL || process.env.MOODLE_URL;
+  const token = cloudflareEnv?.MOODLE_TOKEN || process.env.MOODLE_TOKEN;
 
   if (!moodleUrl || !token) {
+    if (cloudflareContextError) {
+      const message =
+        cloudflareContextError instanceof Error
+          ? cloudflareContextError.message
+          : "Unknown Cloudflare context error";
+      return NextResponse.json(
+        { error: `Unable to access Cloudflare runtime bindings: ${message}` },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json(
-      { error: "Missing MOODLE_URL or MOODLE_TOKEN in Cloudflare environment variables." },
+      {
+        error: "Missing Moodle configuration.",
+        missing: [
+          ...(!moodleUrl ? ["MOODLE_URL"] : []),
+          ...(!token ? ["MOODLE_TOKEN"] : []),
+        ],
+      },
       { status: 500 }
     );
   }
 
   try {
+    const cleanUrl = moodleUrl.replace(/\/+$/, "");
+    const query = new URLSearchParams({
+      wstoken: token,
+      wsfunction: "core_course_get_courses",
+      moodlewsrestformat: "json",
+    });
     const res = await fetch(
-      `${moodleUrl}/webservice/rest/server.php?wstoken=${token}&wsfunction=core_course_get_courses&moodlewsrestformat=json`,
+      `${cleanUrl}/webservice/rest/server.php?${query}`,
       { cache: "no-store" }
     );
 
