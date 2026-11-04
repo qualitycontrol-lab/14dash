@@ -1,8 +1,17 @@
 import { NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
+function getStringBinding(env: object | undefined, name: string): string | undefined {
+  if (!env) {
+    return undefined;
+  }
+
+  const value = Reflect.get(env, name);
+  return typeof value === "string" ? value : undefined;
+}
+
 export async function GET() {
-  let cloudflareEnv: CloudflareEnv | undefined;
+  let cloudflareEnv: object | undefined;
   let cloudflareContextError: unknown;
 
   try {
@@ -11,8 +20,8 @@ export async function GET() {
     cloudflareContextError = error;
   }
 
-  const moodleUrl = cloudflareEnv?.MOODLE_URL || process.env.MOODLE_URL;
-  const token = cloudflareEnv?.MOODLE_TOKEN || process.env.MOODLE_TOKEN;
+  const moodleUrl = getStringBinding(cloudflareEnv, "MOODLE_URL") || process.env.MOODLE_URL;
+  const token = getStringBinding(cloudflareEnv, "MOODLE_TOKEN") || process.env.MOODLE_TOKEN;
 
   if (!moodleUrl || !token) {
     if (cloudflareContextError) {
