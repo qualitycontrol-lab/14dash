@@ -1,74 +1,63 @@
 import { NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
-function getStringBinding(env: object | undefined, name: string): string | undefined {
-  if (!env) {
-    return undefined;
-  }
-
-  const value = Reflect.get(env, name);
-  return typeof value === "string" ? value : undefined;
-}
-
 export async function GET() {
-  let cloudflareEnv: object | undefined;
-  let cloudflareContextError: unknown;
+  let moodleUrl = process.env.MOODLE_URL;
+  let token = process.env.MOODLE_TOKEN;
 
+  // 1. Read Cloudflare Workers runtime environment
   try {
-    cloudflareEnv = (await getCloudflareContext({ async: true })).env;
-  } catch (error: unknown) {
-    cloudflareContextError = error;
+    const cf = await getCloudflareContext({ async: true });
+    if (cf?.env) {
+      const env = cf.env as Record<string, string | undefined>;
+      moodleUrl = moodleUrl || env.MOODLE_URL;
+      token = token || env.MOODLE_TOKEN;
+    }
+  } catch {
+    // Falls back to process.env if running outside Cloudflare Worker isolate
   }
 
-  const moodleUrl = getStringBinding(cloudflareEnv, "MOODLE_URL") || process.env.MOODLE_URL;
-  const token = getStringBinding(cloudflareEnv, "MOODLE_TOKEN") || process.env.MOODLE_TOKEN;
-
+  // 2. Validate presence of credentials
   if (!moodleUrl || !token) {
-    if (cloudflareContextError) {
-      const message =
-        cloudflareContextError instanceof Error
-          ? cloudflareContextError.message
-          : "Unknown Cloudflare context error";
-      return NextResponse.json(
-        { error: `Unable to access Cloudflare runtime bindings: ${message}` },
-        { status: 500 }
-      );
-    }
-
     return NextResponse.json(
       {
-        error: "Missing Moodle configuration.",
-        missing: [
-          ...(!moodleUrl ? ["MOODLE_URL"] : []),
-          ...(!token ? ["MOODLE_TOKEN"] : []),
-        ],
+        error: "Missing credentials in Cloudflare environment variables",
+        detected_url: moodleUrl ? "Present" : "Missing",
+        detected_token: token ? "Present" : "Missing",
       },
       { status: 500 }
     );
   }
 
-  try {
-    const cleanUrl = moodleUrl.replace(/\/+$/, "");
-    const query = new URLSearchParams({
-      wstoken: token,
-      wsfunction: "core_course_get_courses",
-      moodlewsrestformat: "json",
-    });
-    const res = await fetch(
-      `${cleanUrl}/webservice/rest/server.php?${query}`,
-      { cache: "no-store" }
-    );
+  // 3. Automatically sanitize the URL (removes /login, /login/index.php, and trailing slashes)
+  const cleanUrl = moodleUrl
+    .replace(/\/login(\/index\.php)?\/?$/i, "")
+    .replace(/\/+$/, "");
 
+  const targetApiUrl = `${cleanUrl}/webservice/rest/server.php?wstoken=${token}&wsfunction=core_course_get_courses&moodlewsrestformat=json`;
+
+  try {
+    const res = await fetch(targetApiUrl, { cache: "no-store" });
     const data = await res.json();
 
     if (data.exception || data.errorcode) {
-      return NextResponse.json({ error: data.message || data.errorcode }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: data.message || data.errorcode,
+          queried_url: cleanUrl,
+        },
+        { status: 400 }
+      );
     }
 
-    // Exclude Moodle's default frontpage course (ID: 1)
+    // Filter out Moodle's default frontpage course (ID 1)
     const courses = Array.isArray(data) ? data.filter((c: { id: number }) => c.id !== 1) : [];
 
-    return NextResponse.json({ courses });
+    return NextResponse.json({
+      success: true,
+      count: courses.length,
+      courses,
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to fetch from Moodle";
     return NextResponse.json({ error: message }, { status: 500 });
