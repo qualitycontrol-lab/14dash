@@ -1,14 +1,23 @@
 # 14dash
 
-## Cloudflare Workers deployment
+## Deploying on Vercel
 
-This app uses the OpenNext Cloudflare adapter. Configure the Cloudflare Workers
-build settings to use:
+Import the repository into Vercel and use the detected Next.js settings. The
+build command is `npm run build`.
 
-- Build command: `npm run cloudflare:build`
-- Deploy command: `npx wrangler deploy`
+## Google sign-in
 
-The build command creates the Worker entry point and static assets in
-`.open-next/`; the deploy command publishes that output using the project's
-locally installed Wrangler. For a local production-runtime preview, run
-`npm run preview`. To build and deploy from a terminal, run `npm run deploy`.
+Create a Google OAuth client ID for a Web application in Google Cloud Console.
+Add these authorized redirect URIs to the client:
+
+- Local: `http://localhost:3000/api/auth/callback/google`
+- Production: `https://<your-vercel-domain>/api/auth/callback/google`
+
+Copy `.env.example` to `.env.local` for local development and fill in the
+Google credentials and a generated `NEXTAUTH_SECRET` (for example,
+`openssl rand -base64 32`). In Vercel, add `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET`, `NEXTAUTH_SECRET`, and `NEXTAUTH_URL` as environment
+variables. Set `NEXTAUTH_URL` to the canonical production URL, such as
+`https://<your-vercel-domain>`.
+
+Sign-in is limited to Google accounts with an `@starksys.dev` email address.
