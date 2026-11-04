@@ -34,23 +34,37 @@ async function fetchMoodleJson(url: URL, failureMessage: string): Promise<unknow
   let response: Response;
   try {
     response = await fetch(url, { cache: "no-store" });
-  } catch {
-    throw new MoodleApiError("Unable to communicate with Moodle.");
+  } catch (error) {
+    console.error("Moodle Fetch Error:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    throw new MoodleApiError(`Unable to communicate with Moodle: ${message}`);
+  }
+
+  let rawText: string;
+  try {
+    rawText = await response.text();
+  } catch (error) {
+    console.error("Moodle Fetch Error:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    throw new MoodleApiError(`Unable to read Moodle response: ${message}`);
   }
 
   if (!response.ok) {
-    throw new MoodleApiError(failureMessage);
+    console.error("API response error:", response.status, rawText);
+    throw new MoodleApiError(`${failureMessage}: ${rawText || response.statusText}`);
   }
 
   let data: unknown;
   try {
-    data = await response.json();
-  } catch {
-    throw new MoodleApiError("Moodle returned an invalid response.");
+    data = JSON.parse(rawText);
+  } catch (error) {
+    console.error("Moodle Fetch Error:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    throw new MoodleApiError(`Moodle returned an invalid response: ${message}`);
   }
 
   if (isRecord(data) && ("exception" in data || "errorcode" in data)) {
-    throw new MoodleApiError(failureMessage);
+    throw new MoodleApiError(`${failureMessage}: ${JSON.stringify(data)}`);
   }
 
   return data;

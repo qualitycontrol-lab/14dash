@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import DashboardContent from "./dashboard-content";
-import { getMoodleCourses, MoodleApiError, type MoodleCourse } from "@/lib/moodle";
+import { getMoodleCourses, type MoodleCourse } from "@/lib/moodle";
 
 export default async function Home() {
   const session = await getServerSession();
@@ -15,11 +15,8 @@ export default async function Home() {
   try {
     courses = await getMoodleCourses(session.user.email);
   } catch (error) {
-    if (error instanceof MoodleApiError) {
-      courseError = error.message;
-    } else {
-      throw error;
-    }
+    console.error("Moodle Fetch Error:", error);
+    courseError = error instanceof Error ? error.message : String(error);
   }
 
   const welcomeMessage = `Welcome, ${session.user?.name ?? session.user?.email ?? "there"}`;

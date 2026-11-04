@@ -192,9 +192,10 @@ function CourseCards({
       </div>
 
       {courseError ? (
-        <p role="alert" className={`${outlineCard} p-6 text-[18px] text-[#8b2f36]`}>
-          {courseError}
-        </p>
+        <div role="alert" className={`${outlineCard} p-6 text-[18px] text-[#8b2f36]`}>
+          <h3 className="font-semibold">Unable to communicate with Moodle</h3>
+          <pre className="mt-3 whitespace-pre-wrap break-words font-sans">{courseError}</pre>
+        </div>
       ) : courses.length === 0 ? (
         <p className={`${outlineCard} p-6 text-[18px] text-[#4b615e]`}>
           No training courses currently assigned to your account
