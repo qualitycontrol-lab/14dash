@@ -9,8 +9,9 @@ const handler = NextAuth({
     }),
   ],
   callbacks: {
-    async signIn({ profile }) {
-      return profile?.email?.toLowerCase().endsWith("@bonadmin.com") ?? false;
+    async signIn({ user }) {
+      const email = user.email?.trim().toLowerCase();
+      return email?.endsWith("@bonadmin.com") ?? false;
     },
   },
   secret: process.env.NEXTAUTH_SECRET,
