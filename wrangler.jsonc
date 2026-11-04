@@ -2,10 +2,14 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "14dash",
   "main": ".open-next/worker.js",
-  "compatibility_date": "2026-11-03",
+  "compatibility_date": "2024-12-30",
   "compatibility_flags": ["nodejs_compat"],
+  "keep_vars": true,
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
+  },
+  "vars": {
+    "MOODLE_URL": "https://moodle-dev.starksys.dev"
   }
 }
