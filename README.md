@@ -20,4 +20,11 @@ Google credentials and a generated `NEXTAUTH_SECRET` (for example,
 variables. Set `NEXTAUTH_URL` to the canonical production URL, such as
 `https://<your-vercel-domain>`.
 
-Sign-in is limited to Google accounts with an `@starksys.dev` email address.
+Sign-in is limited to Google accounts with an `@bonadmin.com` email address.
+
+## Moodle courses
+
+Set `MOODLE_URL` to the Moodle site URL and `MOODLE_TOKEN` to a Moodle web
+service token in `.env.local` and in the Vercel environment. The dashboard uses
+the signed-in user's email to find their Moodle account and list their enrolled
+courses.

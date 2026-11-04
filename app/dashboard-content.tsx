@@ -2,6 +2,7 @@
 
 import { signIn } from "next-auth/react";
 import type { ReactNode } from "react";
+import type { MoodleCourse } from "@/lib/moodle";
 
 function Icon({ name, size = 18 }: { name: string; size?: number }) {
   const common = {
@@ -172,179 +173,77 @@ function Hero() {
   );
 }
 
-function MasteryCards() {
-  const stats = [
-    { label: "Skills Mastered", value: "12/20", icon: "badge", percent: 60, color: "bg-[#1ca5a0]", badge: "bg-[#d8f1ea]" },
-    { label: "Modules Completed", value: "28/45", icon: "book", percent: 62, color: "bg-[#1ca5a0]", badge: "bg-[#d8f1ea]" },
-    { label: "Goals Achieved", value: "5/8", icon: "goal", percent: 63, color: "bg-[#f1a05d]", badge: "bg-[#f8e7d8]" },
-  ];
-
+function CourseCards({
+  courses,
+  courseError,
+  moodleUrl,
+}: {
+  courses: MoodleCourse[];
+  courseError: string | null;
+  moodleUrl: string;
+}) {
   return (
     <section className="mx-auto mt-20 max-w-[1240px] px-4">
       <div className="mb-8 flex items-center gap-5">
         <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#d7f0ea] text-[#1c8d8a]">
           <Icon name="spark" size={24} />
         </div>
-        <div>
-          <h2 className="text-[42px] font-semibold tracking-[-0.06em] text-[#141d1b]">Mastery in Progress</h2>
-        </div>
+        <h2 className="text-[42px] font-semibold tracking-[-0.06em] text-[#141d1b]">Your Training Courses</h2>
       </div>
 
-      <p className="mb-8 text-[19px] text-[#4b615e]">Every step forward is an investment in your confidence</p>
+      {courseError ? (
+        <p role="alert" className={`${outlineCard} p-6 text-[18px] text-[#8b2f36]`}>
+          {courseError}
+        </p>
+      ) : courses.length === 0 ? (
+        <p className={`${outlineCard} p-6 text-[18px] text-[#4b615e]`}>
+          No training courses currently assigned to your account
+        </p>
+      ) : (
+        <div className="grid gap-8 md:grid-cols-2">
+          {courses.map((course) => {
+            const progress =
+              typeof course.progress === "number" && Number.isFinite(course.progress)
+                ? Math.min(100, Math.max(0, course.progress))
+                : null;
+            const courseUrl = `${moodleUrl.replace(/\/+$/, "")}/course/view.php?id=${encodeURIComponent(String(course.id))}`;
 
-      <div className="grid gap-6 md:grid-cols-3">
-        {stats.map((stat) => (
-          <div key={stat.label} className={`${outlineCard} p-5`}>
-            <div className="mb-5 flex items-center justify-between">
-              <div className={`flex h-14 w-14 items-center justify-center rounded-full ${stat.badge} text-[#1e8f89]`}>
-                <Icon name={stat.icon} size={28} />
-              </div>
-              <span className={`rounded-full px-3 py-1 text-[12px] font-semibold text-[#0f716d] ${stat.badge}`}>
-                {stat.percent}%
-              </span>
-            </div>
-            <div className="text-[54px] font-semibold tracking-[-0.07em] text-[#15211f]">{stat.value}</div>
-            <div className="mt-2 text-[18px] text-[#4a5d5a]">{stat.label}</div>
-            <div className="mt-6 h-2.5 w-full overflow-hidden rounded-full bg-[#e4ece8]">
-              <div className={`h-full rounded-full ${stat.color}`} style={{ width: `${stat.percent}%` }} />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className={`${outlineCard} mt-10 p-4`}>
-        <div className="mb-4 flex items-center gap-3 px-2 pt-1">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#d8f1ea] text-[#1ca5a0]">
-            <Icon name="shield" size={20} />
-          </div>
-          <h3 className="text-[28px] font-semibold tracking-[-0.04em] text-[#101b19]">Recent Achievements</h3>
-        </div>
-
-        <div className="space-y-3">
-          {[
-            ["Communication Mastery", "2 days ago"],
-            ["Conflict Resolution", "1 week ago"],
-            ["Time Management", "2 weeks ago"],
-          ].map(([title, age]) => (
-            <div key={String(title)} className="flex items-center justify-between rounded-[18px] border border-[#d8e1de] bg-[#f6faf9] px-5 py-4">
-              <div className="flex items-center gap-4">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#d9f3ea] text-[#1ca5a0]">
-                  <Icon name="check" size={15} />
+            return (
+              <article key={course.id} className={`${outlineCard} p-6`}>
+                <h3 className="text-[28px] font-semibold tracking-[-0.04em] text-[#14211f]">
+                  {course.fullname}
+                </h3>
+                <div className="mt-6 flex items-center justify-between text-[14px] text-[#5e706e]">
+                  <span>Progress</span>
+                  <span className="font-semibold text-[#0f1f1d]">
+                    {progress === null ? "Not available" : `${progress}%`}
+                  </span>
                 </div>
-                <div>
-                  <div className="text-[22px] font-medium tracking-[-0.03em] text-[#172422]">{String(title)}</div>
-                  <div className="text-[15px] text-[#5d6f6c]">{String(age)}</div>
-                </div>
-              </div>
-              <span className="rounded-full border border-[#8ac9be] bg-[#d9f3ea] px-3 py-1 text-[12px] font-semibold text-[#0f7d74]">Mastered</span>
-            </div>
-          ))}
+                {progress !== null && (
+                  <div
+                    className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-[#e6ece9]"
+                    role="progressbar"
+                    aria-label={`${course.fullname} progress`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={progress}
+                  >
+                    <div className="h-full rounded-full bg-[#1ca5a0]" style={{ width: `${progress}%` }} />
+                  </div>
+                )}
+                <a
+                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-[#1ca5a0] py-4 text-[18px] font-semibold text-white"
+                  href={courseUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open course <Icon name="arrow" size={18} />
+                </a>
+              </article>
+            );
+          })}
         </div>
-      </div>
-    </section>
-  );
-}
-
-function Practice() {
-  const cards = [
-    {
-      title: "Effective Communication Strategies",
-      description: "Apply proven techniques to enhance workplace communication",
-      percent: 100,
-      level: "beginner",
-      label: "Review",
-      action: "bg-[#1ca5a0] text-white",
-      icon: "book",
-    },
-    {
-      title: "Practice: Difficult Conversations",
-      description: "Simulate challenging scenarios to build confidence",
-      percent: 60,
-      level: "intermediate",
-      label: "Continue",
-      action: "bg-[#1ca5a0] text-white",
-      icon: "user",
-    },
-    {
-      title: "Conflict Resolution Drill",
-      description: "Refine your de-escalation skills through interactive exercises",
-      percent: 0,
-      level: "intermediate",
-      label: "Practice",
-      action: "bg-white text-[#20413e] border border-[#d7e1dd]",
-      icon: "play",
-    },
-    {
-      title: "Self-Assessment Worksheet",
-      description: "Reflect on your communication patterns and identify growth areas",
-      percent: 0,
-      level: "beginner",
-      label: "Complete",
-      action: "bg-white text-[#20413e] border border-[#d7e1dd]",
-      icon: "download",
-    },
-  ];
-
-  return (
-    <section className="mx-auto mt-20 max-w-[1240px] px-4">
-      <div className="mb-8 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#d7f0ea] text-[#1aa6a1]">
-            <Icon name="spark" size={24} />
-          </div>
-          <h2 className="text-[42px] font-semibold tracking-[-0.06em] text-[#121d1c]">Active Learning Tools</h2>
-        </div>
-        <button className="inline-flex items-center gap-2 rounded-full border border-[#d8e1de] bg-[#f5f8f7] px-5 py-3 text-[18px] font-medium text-[#1c2725]">
-          View All Modules <Icon name="arrow" size={18} />
-        </button>
-      </div>
-
-      <div className="grid gap-8 md:grid-cols-2">
-        {cards.slice(0, 2).map((card) => (
-          <div key={card.title} className={`${outlineCard} p-5`}>
-            <div className="mb-6 flex items-center justify-between">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#d8f1ea] text-[#1aa6a1]">
-                <Icon name={card.icon} size={26} />
-              </div>
-              <div className="rounded-full border border-[#bcdccf] bg-[#d8f1ea] px-3 py-1 text-[12px] font-semibold text-[#0e7e7b]">
-                {card.level}
-              </div>
-            </div>
-            <h3 className="text-[32px] font-semibold tracking-[-0.05em] text-[#14211f]">{card.title}</h3>
-            <p className="mt-4 text-[18px] leading-[1.5] text-[#52635f]">{card.description}</p>
-            <div className="mt-10 flex items-center justify-between text-[14px] text-[#5e706e]">
-              <span>Progress</span>
-              <span className="font-semibold text-[#0f1f1d]">{card.percent}%</span>
-            </div>
-            <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-[#e6ece9]">
-              <div className="h-full rounded-full bg-[#1ca5a0]" style={{ width: `${card.percent}%` }} />
-            </div>
-            <button className={`mt-6 flex w-full items-center justify-center gap-2 rounded-full py-4 text-[18px] font-semibold ${card.action}`}>
-              {card.label} <Icon name="arrow" size={18} />
-            </button>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-8 grid gap-8 md:grid-cols-2">
-        {cards.slice(2).map((card) => (
-          <div key={card.title} className={`${outlineCard} p-5`}>
-            <div className="mb-6 flex items-center justify-between">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#f3f5f4] text-[#1e3234]">
-                <Icon name={card.icon} size={26} />
-              </div>
-              <div className="rounded-full border border-[#d6dfdb] bg-[#f3f6f5] px-3 py-1 text-[12px] font-semibold text-[#4f615f]">
-                {card.level}
-              </div>
-            </div>
-            <h3 className="text-[32px] font-semibold tracking-[-0.05em] text-[#14211f]">{card.title}</h3>
-            <p className="mt-4 text-[18px] leading-[1.5] text-[#52635f]">{card.description}</p>
-            <button className={`mt-8 flex w-full items-center justify-center gap-2 rounded-full py-4 text-[18px] font-semibold ${card.action}`}>
-              {card.label} <Icon name="arrow" size={18} />
-            </button>
-          </div>
-        ))}
-      </div>
+      )}
     </section>
   );
 }
@@ -486,54 +385,26 @@ function SkillsList() {
   );
 }
 
-function RecommendedPath() {
-  const steps = [
-    { title: 'Advanced Negotiation', description: 'Build on your communication foundation', icon: 'chevronRight' },
-    { title: 'Leadership Essentials', description: 'Ready for the next level', icon: 'chevronRight' },
-  ];
-
-  return (
-    <section className="mx-auto mt-20 max-w-[1240px] px-4 pb-24">
-      <div className="rounded-[28px] border border-[#d7e1dd] bg-[#f8fbf9] p-7">
-        <div className="mb-7 flex items-center gap-3">
-          <div className="text-[40px] font-semibold text-[#1aa6a1]">›</div>
-          <h2 className="text-[42px] font-semibold tracking-[-0.06em] text-[#141f1d]">Next Recommended Path</h2>
-        </div>
-
-        <div className="space-y-5">
-          {steps.map((item) => (
-            <div key={item.title} className="flex items-center justify-between rounded-[22px] border border-[#d9e2df] bg-[#f8fbf9] px-6 py-5 text-[#121d1c]">
-              <div>
-                <div className="text-[30px] font-medium tracking-[-0.04em]">{item.title}</div>
-                <div className="mt-1 text-[18px] text-[#536663]">{item.description}</div>
-              </div>
-              <div className="text-[28px] text-[#1d2b2a]">
-                <Icon name={item.icon} size={20} />
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <button className="mt-7 flex w-full items-center justify-center gap-3 rounded-full bg-gradient-to-r from-[#1ea5a2] to-[#3ec5ad] py-5 text-[26px] font-semibold text-white">
-          Continue Learning Journey <Icon name="arrow" size={22} />
-        </button>
-      </div>
-    </section>
-  );
-}
-
-export default function DashboardContent({ welcomeMessage }: { welcomeMessage: string }) {
+export default function DashboardContent({
+  welcomeMessage,
+  courses,
+  courseError,
+  moodleUrl,
+}: {
+  welcomeMessage: string;
+  courses: MoodleCourse[];
+  courseError: string | null;
+  moodleUrl: string;
+}) {
   return (
     <main className="min-h-screen bg-[#eff3f1] text-[#11201d]">
       <p className="mx-auto max-w-[1240px] px-4 pt-4 text-[18px] font-medium text-[#445954]">{welcomeMessage}</p>
       <Header />
       <div className="pb-16">
         <Hero />
-        <MasteryCards />
-        <Practice />
+        <CourseCards courses={courses} courseError={courseError} moodleUrl={moodleUrl} />
         <CalendarSection />
         <SkillsList />
-        <RecommendedPath />
       </div>
     </main>
   );
