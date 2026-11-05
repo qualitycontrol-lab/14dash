@@ -1,3 +1,4 @@
+import { getServerSession } from "next-auth";
 import { google } from "googleapis";
 import { NextResponse } from "next/server";
 import {
@@ -8,6 +9,12 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const session = await getServerSession();
+
+  if (!session?.user?.email?.trim().toLowerCase().endsWith("@bonadmin.com")) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
   const query = new URL(request.url).searchParams.get("q")?.trim() ?? "";
 
   if (query.length < 2) {

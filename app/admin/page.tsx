@@ -8,7 +8,7 @@ export default async function AdminPage() {
   const session = await getServerSession();
 
   if (!session?.user?.email) {
-    redirect("/");
+    redirect("/sign-in");
   }
 
   if (!isAdminEmail(session.user.email)) {
