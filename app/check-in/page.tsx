@@ -7,8 +7,6 @@ type Employee = {
   email: string;
 };
 
-const trainingName = "Administration Basics";
-
 function isEmployee(value: unknown): value is Employee {
   return (
     typeof value === "object" &&
@@ -99,13 +97,10 @@ export default function CheckInPage() {
     setCheckInError(null);
 
     try {
-      const response = await fetch("/api/employees/check-in", {
+      const response = await fetch("/api/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...selectedEmployee,
-          training: trainingName,
-        }),
+        body: JSON.stringify(selectedEmployee),
       });
 
       if (!response.ok) {
@@ -137,11 +132,9 @@ export default function CheckInPage() {
           BON Training · Public check-in
         </p>
         <h1 className="mt-3 font-serif text-4xl tracking-[-0.05em] text-[#172523]">
-          Check in for training
+          Training Check-In
         </h1>
         <p className="mt-3 text-sm leading-6 text-[#536663]">
-          {trainingName} <span aria-hidden="true">·</span> Today, 10:00 AM
-          <br />
           Search for your name and confirm your attendance.
         </p>
 
@@ -155,7 +148,7 @@ export default function CheckInPage() {
           value={query}
           onChange={updateQuery}
           disabled={checkedIn}
-          placeholder="Start typing your name"
+          placeholder="Type your first or last name..."
           aria-autocomplete="list"
           aria-controls="employee-results"
           aria-expanded={employees.length > 0}
@@ -205,7 +198,9 @@ export default function CheckInPage() {
 
         {selectedEmployee && !checkedIn && (
           <div className="mt-5 rounded-[14px] border border-[#cbd8d4] bg-white p-4">
-            <p className="font-semibold text-[#172523]">{selectedEmployee.name}</p>
+            <p className="font-semibold text-[#172523]">
+              Check in as {selectedEmployee.name}?
+            </p>
             <p className="mt-1 text-sm text-[#71807c]">{selectedEmployee.email}</p>
             <button
               type="button"
@@ -213,7 +208,7 @@ export default function CheckInPage() {
               disabled={isSubmitting}
               className="mt-4 inline-flex h-11 w-full items-center justify-center rounded-full bg-[#168f89] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#117c77] disabled:cursor-wait disabled:opacity-60"
             >
-              {isSubmitting ? "Recording attendance…" : "Confirm attendance"}
+              {isSubmitting ? "Recording attendance…" : "Check in"}
             </button>
           </div>
         )}
@@ -226,9 +221,8 @@ export default function CheckInPage() {
 
         {checkedIn && selectedEmployee && (
           <div role="status" className="mt-5 rounded-[14px] border border-[#b8d9cb] bg-[#eaf5f1] p-4">
-            <p className="font-semibold text-[#277657]">Attendance recorded</p>
-            <p className="mt-1 text-sm text-[#536663]">
-              {selectedEmployee.name} is checked in for {trainingName}.
+            <p className="font-semibold text-[#277657]">
+              Check-in Confirmed! Welcome, {selectedEmployee.name}
             </p>
             <button
               type="button"

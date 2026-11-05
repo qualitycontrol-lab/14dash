@@ -8,7 +8,7 @@ import {
 type CheckInPayload = {
   name: string;
   email: string;
-  training: string;
+  training?: string;
 };
 
 function isCheckInPayload(value: unknown): value is CheckInPayload {
@@ -19,8 +19,7 @@ function isCheckInPayload(value: unknown): value is CheckInPayload {
     typeof value.name === "string" &&
     "email" in value &&
     typeof value.email === "string" &&
-    "training" in value &&
-    typeof value.training === "string"
+    (!("training" in value) || typeof value.training === "string")
   );
 }
 
@@ -39,13 +38,12 @@ export async function POST(request: Request) {
 
   const name = payload.name.trim();
   const email = payload.email.trim().toLowerCase();
-  const training = payload.training.trim();
+  const training = payload.training?.trim() || "Training check-in";
 
   if (
     !name ||
     name.length > 150 ||
     !/^[^\s@]+@bonadmin\.com$/.test(email) ||
-    !training ||
     training.length > 200
   ) {
     return NextResponse.json({ error: "Invalid attendance details." }, { status: 400 });
