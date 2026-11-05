@@ -28,8 +28,10 @@ site only serves the admin interface to accounts on this allowlist. Other
 visitors remain on the sign-in page. Approved administrators are sent directly
 to `/admin` after signing in.
 
-The admin screens currently use clearly labeled preview data. Trainings added
-from the form are temporary and are not persisted.
+Most admin sections currently use clearly labeled preview data. Trainings
+added from the form are temporary and are not persisted. The Reporting section
+loads actual attendance entries from the configured Google Sheet, with
+date-filtered summaries and CSV export.
 
 ## Employee check-in
 

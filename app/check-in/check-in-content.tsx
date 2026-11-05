@@ -126,12 +126,12 @@ export default function CheckInContent() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#eff3f1] px-4 py-10 text-[#11201d]">
-      <section className="w-full max-w-[560px] rounded-[26px] border border-[#d7e1dd] bg-[#f8fbf9] p-6 shadow-[0_20px_60px_rgba(27,59,53,0.08)] sm:p-9">
+    <main className="flex min-h-screen min-h-[100dvh] items-start justify-center bg-[#eff3f1] px-4 py-6 text-[#11201d] sm:items-center sm:py-10">
+      <section className="w-full max-w-[560px] rounded-[20px] border border-[#d7e1dd] bg-[#f8fbf9] p-5 shadow-[0_20px_60px_rgba(27,59,53,0.08)] sm:rounded-[26px] sm:p-9">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#168f89]">
           BON Training · Public check-in
         </p>
-        <h1 className="mt-3 font-serif text-4xl tracking-[-0.05em] text-[#172523]">
+        <h1 className="mt-3 font-serif text-3xl tracking-[-0.05em] text-[#172523] sm:text-4xl">
           Training Check-In
         </h1>
         <p className="mt-3 text-sm leading-6 text-[#536663]">
@@ -144,7 +144,9 @@ export default function CheckInContent() {
         <input
           id="employee-search"
           type="search"
-          autoComplete="off"
+          autoComplete="name"
+          autoCapitalize="words"
+          enterKeyHint="search"
           value={query}
           onChange={updateQuery}
           disabled={checkedIn}
@@ -160,7 +162,7 @@ export default function CheckInContent() {
             id="employee-results"
             role="listbox"
             aria-label="Employee search results"
-            className="mt-2 overflow-hidden rounded-[12px] border border-[#d7e1dd] bg-white"
+            className="mt-2 max-h-64 overflow-y-auto overscroll-contain rounded-[12px] border border-[#d7e1dd] bg-white"
           >
             {isSearching && (
               <p role="status" className="px-4 py-3 text-sm text-[#536663]">
@@ -187,7 +189,7 @@ export default function CheckInContent() {
                   setEmployees([]);
                   setCheckInError(null);
                 }}
-                className="block w-full px-4 py-3 text-left transition hover:bg-[#eaf5f1] focus:bg-[#eaf5f1] focus:outline-none"
+                className="block min-h-14 w-full px-4 py-3 text-left transition hover:bg-[#eaf5f1] focus:bg-[#eaf5f1] focus:outline-none"
               >
                 <span className="block font-semibold text-[#172523]">{employee.name}</span>
                 <span className="mt-0.5 block text-sm text-[#71807c]">{employee.email}</span>
@@ -206,7 +208,7 @@ export default function CheckInContent() {
               type="button"
               onClick={confirmAttendance}
               disabled={isSubmitting}
-              className="mt-4 inline-flex h-11 w-full items-center justify-center rounded-full bg-[#168f89] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#117c77] disabled:cursor-wait disabled:opacity-60"
+              className="mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[#168f89] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#117c77] disabled:cursor-wait disabled:opacity-60"
             >
               {isSubmitting ? "Recording attendance…" : "Check in"}
             </button>

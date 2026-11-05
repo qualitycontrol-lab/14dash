@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 
 type TrainingType = "HCA" | "CSG" | "TTT" | "LF" | "OTA" | "WS" | "Misc";
@@ -790,189 +790,226 @@ function PeopleView() {
   );
 }
 
-function ReportingView({ trainings }: { trainings: Training[] }) {
-  const [fromDate, setFromDate] = useState("2026-01-01");
-  const [toDate, setToDate] = useState("2026-12-31");
-  const [selectedTypes, setSelectedTypes] = useState<TrainingType[]>([]);
-  const [selectedAttendeeTypes, setSelectedAttendeeTypes] = useState<AttendeeType[]>([]);
-  const [reportGenerated, setReportGenerated] = useState(false);
+type AttendanceEntry = {
+  checkedInAt: string;
+  training: string;
+  name: string;
+  email: string;
+};
 
-  const filteredTrainings = trainings.filter((training) => {
-    const matchesDate = training.date >= fromDate && training.date <= toDate;
-    const matchesType = selectedTypes.length === 0 || selectedTypes.includes(training.type);
-    const matchesAttendee = selectedAttendeeTypes.length === 0 ||
-      (training.attendeeType !== undefined && selectedAttendeeTypes.includes(training.attendeeType));
-    return matchesDate && matchesType && matchesAttendee;
-  });
-  const totals = trainingTypes.map((type) => {
-    const typeTrainings = filteredTrainings.filter((training) => training.type === type.code);
-    return {
-      ...type,
-      bonTrainings: typeTrainings.filter((training) => (training.bonAttendees ?? 0) > 0).length,
-      bonMembers: typeTrainings.reduce((sum, training) => sum + (training.bonAttendees ?? 0), 0),
-      allTrainings: typeTrainings.length,
-      allMembers: typeTrainings.reduce((sum, training) => sum + training.attendees, 0),
+function isAttendanceEntry(value: unknown): value is AttendanceEntry {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "checkedInAt" in value &&
+    typeof value.checkedInAt === "string" &&
+    "training" in value &&
+    typeof value.training === "string" &&
+    "name" in value &&
+    typeof value.name === "string" &&
+    "email" in value &&
+    typeof value.email === "string"
+  );
+}
+
+function ReportingView() {
+  const currentYear = new Date().getFullYear();
+  const [fromDate, setFromDate] = useState(`${currentYear}-01-01`);
+  const [toDate, setToDate] = useState(`${currentYear}-12-31`);
+  const [entries, setEntries] = useState<AttendanceEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAttendance() {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch("/api/admin/attendance", { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`Attendance report request failed with status ${response.status}`);
+        }
+
+        const result: unknown = await response.json();
+        if (!Array.isArray(result) || !result.every(isAttendanceEntry)) {
+          throw new Error("Attendance report returned an invalid response.");
+        }
+
+        if (!cancelled) {
+          setEntries(result);
+        }
+      } catch (loadError) {
+        console.error("Attendance report request failed:", loadError);
+        if (!cancelled) {
+          setError("Could not load attendance from the Google Sheet. Please try again.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadAttendance();
+    return () => {
+      cancelled = true;
     };
-  });
-  const visibleTotals = totals.filter((type) => selectedTypes.length === 0 || selectedTypes.includes(type.code));
-  const maxCount = Math.max(1, ...visibleTotals.map((type) => type.allTrainings));
-  const attendeeTypes: AttendeeType[] = ["Employee", "Other / Community", "Associated Company", "Other"];
+  }, [reloadKey]);
 
-  function toggleType(type: TrainingType) {
-    setSelectedTypes((current) =>
-      current.includes(type) ? current.filter((item) => item !== type) : [...current, type],
-    );
-    setReportGenerated(false);
-  }
+  const filteredEntries = entries
+    .filter((entry) => {
+      const date = entry.checkedInAt.slice(0, 10);
+      return date >= fromDate && date <= toDate;
+    })
+    .sort((a, b) => b.checkedInAt.localeCompare(a.checkedInAt));
 
-  function toggleAttendeeType(type: AttendeeType) {
-    setSelectedAttendeeTypes((current) =>
-      current.includes(type) ? current.filter((item) => item !== type) : [...current, type],
-    );
-    setReportGenerated(false);
-  }
+  const uniqueEmployees = new Set(filteredEntries.map((entry) => entry.email.toLowerCase())).size;
+  const trainingSummary = Array.from(
+    filteredEntries.reduce((summary, entry) => {
+      const current = summary.get(entry.training) ?? { checkIns: 0, latestCheckIn: entry.checkedInAt };
+      summary.set(entry.training, {
+        checkIns: current.checkIns + 1,
+        latestCheckIn: current.latestCheckIn > entry.checkedInAt ? current.latestCheckIn : entry.checkedInAt,
+      });
+      return summary;
+    }, new Map<string, { checkIns: number; latestCheckIn: string }>()),
+    ([training, totals]) => ({ training, ...totals }),
+  ).sort((a, b) => b.checkIns - a.checkIns);
 
   function exportReport() {
-    downloadCsv("training-report.csv", [
-      ["Training type", "BON trainings", "BON members", "All trainings", "All members"],
-      ...visibleTotals.map((type) => [
-        type.name,
-        String(type.bonTrainings),
-        String(type.bonMembers),
-        String(type.allTrainings),
-        String(type.allMembers),
+    downloadCsv("attendance-report.csv", [
+      ["Checked in at", "Training", "Employee name", "Email"],
+      ...filteredEntries.map((entry) => [
+        entry.checkedInAt,
+        entry.training,
+        entry.name,
+        entry.email,
       ]),
-      [
-        "Total",
-        String(visibleTotals.reduce((sum, type) => sum + type.bonTrainings, 0)),
-        String(visibleTotals.reduce((sum, type) => sum + type.bonMembers, 0)),
-        String(visibleTotals.reduce((sum, type) => sum + type.allTrainings, 0)),
-        String(visibleTotals.reduce((sum, type) => sum + type.allMembers, 0)),
-      ],
     ]);
   }
 
   return (
     <div className="space-y-5">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#168f89]">Insights</p>
-        <h1 className="mt-2 font-serif text-4xl tracking-[-0.05em] text-[#14211f] sm:text-5xl">Reporting</h1>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#168f89]">Live Google Sheet data</p>
+          <h1 className="mt-2 font-serif text-4xl tracking-[-0.05em] text-[#14211f] sm:text-5xl">Reporting</h1>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setReloadKey((key) => key + 1)}
+            disabled={isLoading}
+            className="h-10 rounded-[10px] border border-[#cfdad6] bg-white px-4 text-sm font-medium text-[#344743] hover:bg-[#eaf5f1] disabled:opacity-60"
+          >
+            {isLoading ? "Refreshing…" : "Refresh"}
+          </button>
+          <button
+            type="button"
+            onClick={exportReport}
+            disabled={!filteredEntries.length}
+            className="h-10 rounded-[10px] bg-[#1aa6a1] px-4 text-sm font-semibold text-white hover:bg-[#148d88] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Export CSV ↓
+          </button>
+        </div>
       </div>
 
-      <section className="rounded-[18px] border border-[#d7e1dd] bg-[#f8fbf9] p-4 sm:p-5">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="block">
-            <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-[#647570]">From</span>
-            <input
-              type="date"
-              value={fromDate}
-              max={toDate}
-              onChange={(event) => { setFromDate(event.target.value); setReportGenerated(false); }}
-              className="h-10 rounded-[10px] border border-[#cfdad6] bg-white px-3 text-sm text-[#344743] outline-none focus:border-[#1ca5a0]"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-[#647570]">To</span>
-            <input
-              type="date"
-              value={toDate}
-              min={fromDate}
-              onChange={(event) => { setToDate(event.target.value); setReportGenerated(false); }}
-              className="h-10 rounded-[10px] border border-[#cfdad6] bg-white px-3 text-sm text-[#344743] outline-none focus:border-[#1ca5a0]"
-            />
-          </label>
-          <div className="ml-auto flex gap-2">
-            <button onClick={exportReport} className="h-10 rounded-[10px] border border-[#cfdad6] bg-white px-4 text-sm font-medium text-[#344743] hover:bg-[#eaf5f1]">
-              Export ↓
-            </button>
-            <button onClick={() => setReportGenerated(true)} className="h-10 rounded-[10px] bg-[#1aa6a1] px-4 text-sm font-semibold text-white hover:bg-[#148d88]">
-              Generate report
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-4 border-t border-[#e1e9e5] pt-4 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-          <div>
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#647570]">Training type</p>
-            <div className="flex flex-wrap gap-1.5">
-              {trainingTypes.map(({ code }) => {
-                const style = categoryStyles[code];
-                const selected = selectedTypes.includes(code);
-                return (
-                  <button
-                    key={code}
-                    aria-pressed={selected}
-                    onClick={() => toggleType(code)}
-                    className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${
-                      selected ? "border-[#1a7771] bg-[#1a7771] text-white" : `border-[#aabdb6] bg-white ${style.tone.split(" ")[1]} hover:bg-[#eaf5f1]`
-                    }`}
-                  >
-                    {code}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <div>
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#647570]">Attendee type</p>
-            <div className="flex flex-wrap gap-1.5">
-              {attendeeTypes.map((type) => {
-                const selected = selectedAttendeeTypes.includes(type);
-                return (
-                  <button
-                    key={type}
-                    aria-pressed={selected}
-                    onClick={() => toggleAttendeeType(type)}
-                    className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${
-                      selected ? "border-[#1a7771] bg-[#1a7771] text-white" : "border-[#9ab9ac] bg-white text-[#147e78] hover:bg-[#eaf5f1]"
-                    }`}
-                  >
-                    {type}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+      <section className="flex flex-wrap items-end gap-3 rounded-[18px] border border-[#d7e1dd] bg-[#f8fbf9] p-4 sm:p-5">
+        <label className="block">
+          <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-[#647570]">From</span>
+          <input
+            type="date"
+            value={fromDate}
+            max={toDate}
+            onChange={(event) => setFromDate(event.target.value)}
+            className="h-10 rounded-[10px] border border-[#cfdad6] bg-white px-3 text-sm text-[#344743] outline-none focus:border-[#1ca5a0]"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-[#647570]">To</span>
+          <input
+            type="date"
+            value={toDate}
+            min={fromDate}
+            onChange={(event) => setToDate(event.target.value)}
+            className="h-10 rounded-[10px] border border-[#cfdad6] bg-white px-3 text-sm text-[#344743] outline-none focus:border-[#1ca5a1]"
+          />
+        </label>
+        <p className="ml-auto text-xs text-[#647570]">
+          {isLoading ? "Loading attendance…" : `${filteredEntries.length} check-ins in selected date range`}
+        </p>
       </section>
 
-      {reportGenerated && (
-        <p role="status" className="text-xs text-[#147e78]">
-          Report generated for {formatDate(fromDate)} through {formatDate(toDate)}.
-        </p>
+      {error && (
+        <div role="alert" className="rounded-[14px] border border-[#edc9c9] bg-[#fff4f3] px-4 py-3 text-sm text-[#a94856]">
+          {error}
+        </div>
       )}
 
-      <section className="overflow-x-auto rounded-[18px] border border-[#d7e1dd] bg-[#f8fbf9]">
-        <div className="min-w-[700px]">
-          <div className="grid grid-cols-[minmax(0,2fr)_0.8fr_0.9fr_0.8fr_0.9fr] gap-3 border-b border-[#dfe7e4] px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#71807c] sm:px-5">
-            <span>Training type</span><span>BON trainings</span><span>BON members</span><span>All trainings</span><span>All members</span>
-          </div>
-          {visibleTotals.map((type) => (
-            <div key={type.code} className="grid min-h-[50px] grid-cols-[minmax(0,2fr)_0.8fr_0.9fr_0.8fr_0.9fr] items-center gap-3 border-b border-[#e5ebe8] px-4 py-2.5 last:border-b-0 sm:px-5">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 text-xs font-medium text-[#243531]">
-                  <span className={`h-2 w-2 shrink-0 rounded-[2px] ${type.code === "HCA" || type.code === "WS" ? "bg-[#c77b3d]" : type.code === "CSG" ? "bg-[#4b8a69]" : type.code === "TTT" ? "bg-[#bb6255]" : type.code === "LF" ? "bg-[#8066ae]" : type.code === "OTA" ? "bg-[#268a87]" : "bg-[#8a958f]"}`} />
-                  <span className="truncate">{type.name}</span>
-                </div>
-                <div className="mt-1.5 h-1.5 max-w-[290px] overflow-hidden rounded-full bg-[#e1e9e5]">
-                  <div className="h-full rounded-full bg-[#1ca5a0]" style={{ width: `${(type.allTrainings / maxCount) * 100}%` }} />
-                </div>
+      {!error && (
+        <>
+          <section className="grid gap-3 sm:grid-cols-3">
+            {[
+              { label: "Employee check-ins", value: filteredEntries.length },
+              { label: "Unique employees", value: uniqueEmployees },
+              { label: "Trainings with attendance", value: trainingSummary.length },
+            ].map((stat) => (
+              <div key={stat.label} className="rounded-[16px] border border-[#d7e1dd] bg-[#f8fbf9] p-4">
+                <p className="text-xs font-medium text-[#71807c]">{stat.label}</p>
+                <p className="mt-2 font-serif text-3xl text-[#172523]">{stat.value}</p>
               </div>
-              <span className="text-xs text-[#344743]">{type.bonTrainings}</span>
-              <span className="text-xs text-[#344743]">{type.bonMembers}</span>
-              <span className="text-xs text-[#344743]">{type.allTrainings}</span>
-              <span className="text-xs text-[#344743]">{type.allMembers}</span>
+            ))}
+          </section>
+
+          <section className="overflow-hidden rounded-[18px] border border-[#d7e1dd] bg-[#f8fbf9]">
+            <div className="border-b border-[#dfe7e4] px-4 py-3 sm:px-5">
+              <h2 className="text-sm font-semibold text-[#243531]">Attendance by training</h2>
             </div>
-          ))}
-          <div className="grid grid-cols-[minmax(0,2fr)_0.8fr_0.9fr_0.8fr_0.9fr] gap-3 bg-[#eff4f1] px-4 py-3 font-serif text-sm text-[#172523] sm:px-5">
-            <span>Total</span>
-            <span>{visibleTotals.reduce((sum, type) => sum + type.bonTrainings, 0)}</span>
-            <span>{visibleTotals.reduce((sum, type) => sum + type.bonMembers, 0)}</span>
-            <span>{visibleTotals.reduce((sum, type) => sum + type.allTrainings, 0)}</span>
-            <span>{visibleTotals.reduce((sum, type) => sum + type.allMembers, 0)}</span>
-          </div>
-        </div>
-      </section>
+            {trainingSummary.length ? (
+              trainingSummary.map((summary) => (
+                <div key={summary.training} className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e5ebe8] px-4 py-3 last:border-b-0 sm:px-5">
+                  <span className="font-medium text-[#243531]">{summary.training}</span>
+                  <span className="text-sm text-[#536663]">
+                    {summary.checkIns} check-ins <span aria-hidden="true">·</span> Latest{" "}
+                    {new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(summary.latestCheckIn))}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="px-4 py-8 text-center text-sm text-[#71807c]">
+                {isLoading ? "Loading records…" : "No attendance records for this date range."}
+              </p>
+            )}
+          </section>
+
+          <section className="overflow-x-auto rounded-[18px] border border-[#d7e1dd] bg-[#f8fbf9]">
+            <div className="border-b border-[#dfe7e4] px-4 py-3 sm:px-5">
+              <h2 className="text-sm font-semibold text-[#243531]">Recent check-ins</h2>
+            </div>
+            <div className="min-w-[640px]">
+              <div className="grid grid-cols-[1.2fr_1.2fr_1fr_1.2fr] gap-3 border-b border-[#dfe7e4] px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#71807c] sm:px-5">
+                <span>Checked in</span><span>Training</span><span>Employee</span><span>Email</span>
+              </div>
+              {filteredEntries.map((entry, index) => (
+                <div key={`${entry.checkedInAt}-${entry.email}-${index}`} className="grid grid-cols-[1.2fr_1.2fr_1fr_1.2fr] gap-3 border-b border-[#e5ebe8] px-4 py-3 text-xs text-[#344743] last:border-b-0 sm:px-5">
+                  <span>{new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.checkedInAt))}</span>
+                  <span>{entry.training}</span>
+                  <span>{entry.name}</span>
+                  <span>{entry.email}</span>
+                </div>
+              ))}
+              {!isLoading && filteredEntries.length === 0 && (
+                <p className="px-4 py-8 text-center text-sm text-[#71807c]">No check-ins to display.</p>
+              )}
+            </div>
+          </section>
+        </>
+      )}
     </div>
   );
 }
@@ -1027,7 +1064,7 @@ export default function AdminContent({ adminName }: { adminName: string }) {
       </header>
 
       <div className="mx-auto max-w-[1240px] px-4 py-8 sm:py-10">
-        {activeSection !== "People & TIP" && (
+        {activeSection !== "People & TIP" && activeSection !== "Reporting" && (
           <div className="mb-8 flex items-start gap-3 rounded-[16px] border border-[#bddbd4] bg-[#e5f3ed] px-4 py-3 text-sm text-[#3d6258]">
             <span className="mt-0.5 font-bold" aria-hidden="true">i</span>
             <p><strong>Preview data.</strong> Sample records are shown for layout review. Changes made here are temporary and won’t be saved.</p>
@@ -1040,7 +1077,7 @@ export default function AdminContent({ adminName }: { adminName: string }) {
         )}
         {activeSection === "Start training" && <TrainingForm onCreate={createTraining} />}
         {activeSection === "People & TIP" && <PeopleView />}
-        {activeSection === "Reporting" && <ReportingView trainings={trainings} />}
+        {activeSection === "Reporting" && <ReportingView />}
       </div>
     </main>
   );
