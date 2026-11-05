@@ -16,11 +16,19 @@ Add these authorized redirect URIs to the client:
 Copy `.env.example` to `.env.local` for local development and fill in the
 Google credentials and a generated `NEXTAUTH_SECRET` (for example,
 `openssl rand -base64 32`). In Vercel, add `GOOGLE_CLIENT_ID`,
-`GOOGLE_CLIENT_SECRET`, `NEXTAUTH_SECRET`, and `NEXTAUTH_URL` as environment
-variables. Set `NEXTAUTH_URL` to the canonical production URL, such as
-`https://<your-vercel-domain>`.
+`GOOGLE_CLIENT_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, and `ADMIN_EMAILS` as
+environment variables. Set `NEXTAUTH_URL` to the canonical production URL,
+such as `https://<your-vercel-domain>`.
 
 Sign-in is limited to Google accounts with an `@bonadmin.com` email address.
+To grant admin access, set `ADMIN_EMAILS` to a comma-separated list of exact
+Google account email addresses (for example,
+`admin1@bonadmin.com,admin2@bonadmin.com`) in `.env.local` and in Vercel. The
+`/admin` page checks this allowlist on the server. Admin accounts can choose
+**Admin view** from the sign-in page or their training portal header.
+
+The admin screens currently use clearly labeled preview data. Trainings added
+from the form are temporary and are not persisted.
 
 ## Moodle courses
 

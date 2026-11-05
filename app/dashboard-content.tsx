@@ -1,6 +1,7 @@
 "use client";
 
 import { signIn } from "next-auth/react";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import type { MoodleCourse } from "@/lib/moodle";
 
@@ -92,7 +93,7 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
 
 const outlineCard = "rounded-[26px] border border-[#d7e1dd] bg-[#f8fbf9] shadow-[inset_0_0_0_1px_rgba(245,248,247,0.7)]";
 
-function Header() {
+function Header({ isAdmin }: { isAdmin: boolean }) {
   return (
     <header className="border-b border-[#dfe4e1] bg-[#f7f7f5]">
       <div className="mx-auto flex max-w-[1240px] items-center gap-6 px-4 py-3">
@@ -110,12 +111,21 @@ function Header() {
           </div>
         </div>
 
-        <button
-          className="ml-auto inline-flex h-11 items-center justify-center rounded-full bg-[#1aa6a1] px-6 text-[15px] font-semibold text-white shadow-[0_2px_0_rgba(0,0,0,0.04)] transition-transform hover:scale-[1.01]"
-          onClick={() => void signIn("google")}
-        >
-          Sign In
-        </button>
+        {isAdmin ? (
+          <Link
+            className="ml-auto inline-flex h-11 items-center justify-center rounded-full bg-[#1aa6a1] px-6 text-[15px] font-semibold text-white shadow-[0_2px_0_rgba(0,0,0,0.04)] transition-transform hover:scale-[1.01]"
+            href="/admin"
+          >
+            Admin view
+          </Link>
+        ) : (
+          <button
+            className="ml-auto inline-flex h-11 items-center justify-center rounded-full bg-[#1aa6a1] px-6 text-[15px] font-semibold text-white shadow-[0_2px_0_rgba(0,0,0,0.04)] transition-transform hover:scale-[1.01]"
+            onClick={() => void signIn("google")}
+          >
+            Sign In
+          </button>
+        )}
       </div>
     </header>
   );
@@ -253,7 +263,7 @@ function CalendarSection() {
           <div className="mt-3 grid grid-cols-7 gap-3">
             {Array.from({ length: 35 }, (_, index) => {
               const day = index + 1;
-              const session = [1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31].includes(day);
+              const hasTraining = [1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31].includes(day);
               const isSelected = day === 8;
               const isHighlighted = [11, 13, 17, 22, 25, 29].includes(day);
 
@@ -265,9 +275,9 @@ function CalendarSection() {
                   }`}
                 >
                   <div className="text-[18px] font-medium text-[#1f2c29]">{day}</div>
-                  {session && (
+                  {hasTraining && (
                     <div className={`mt-2 w-full rounded-full px-2 py-1 text-[10px] font-medium ${isHighlighted ? "bg-[#d8f1ea] text-[#0f7d75]" : "bg-[#f0f3f2] text-[#51615d]"}`}>
-                      {day === 8 ? "Workshop" : day === 11 ? "Admin" : day === 22 ? "Training" : "Session"}
+                      {day === 8 ? "Workshop" : day === 11 ? "Admin" : "Training"}
                     </div>
                   )}
                 </div>
@@ -293,7 +303,7 @@ function CalendarSection() {
           <div className="rounded-[24px] border border-[#d7e1dd] bg-[#f7faf9] p-5">
             <div className="mb-5 flex items-center justify-between">
               <h3 className="text-[26px] font-semibold tracking-[-0.05em] text-[#131f1d]">Coming up</h3>
-              <button className="text-[14px] font-medium text-[#3d5d5a]">All sessions</button>
+              <button className="text-[14px] font-medium text-[#3d5d5a]">All trainings</button>
             </div>
             <div className="space-y-4">
               {[
@@ -360,11 +370,13 @@ function SkillsList() {
 
 export default function DashboardContent({
   welcomeMessage,
+  isAdmin,
   courses,
   courseError,
   moodleUrl,
 }: {
   welcomeMessage: string;
+  isAdmin: boolean;
   courses: MoodleCourse[];
   courseError: string | null;
   moodleUrl: string;
@@ -372,7 +384,7 @@ export default function DashboardContent({
   return (
     <main className="min-h-screen bg-[#eff3f1] text-[#11201d]">
       <p className="mx-auto max-w-[1240px] px-4 pt-4 text-[18px] font-medium text-[#445954]">{welcomeMessage}</p>
-      <Header />
+      <Header isAdmin={isAdmin} />
       <div className="pb-16">
         <CalendarSection />
         <CourseCards courses={courses} courseError={courseError} moodleUrl={moodleUrl} />
