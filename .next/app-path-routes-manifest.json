@@ -1,7 +1,14 @@
 {
   "/_global-error/page": "/_global-error",
   "/_not-found/page": "/_not-found",
+  "/admin/page": "/admin",
+  "/api/admin/attendance/route": "/api/admin/attendance",
+  "/api/attendance/route": "/api/attendance",
   "/api/auth/[...nextauth]/route": "/api/auth/[...nextauth]",
+  "/api/employees/check-in/route": "/api/employees/check-in",
+  "/api/employees/search/route": "/api/employees/search",
   "/api/moodle/courses/route": "/api/moodle/courses",
-  "/page": "/"
+  "/check-in/page": "/check-in",
+  "/page": "/",
+  "/sign-in/page": "/sign-in"
 }

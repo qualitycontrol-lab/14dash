@@ -51,10 +51,52 @@
       "namedRegex": "^/_not\\-found(?:/)?$"
     },
     {
+      "page": "/admin",
+      "regex": "^/admin(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin(?:/)?$"
+    },
+    {
+      "page": "/api/admin/attendance",
+      "regex": "^/api/admin/attendance(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/admin/attendance(?:/)?$"
+    },
+    {
+      "page": "/api/attendance",
+      "regex": "^/api/attendance(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/attendance(?:/)?$"
+    },
+    {
+      "page": "/api/employees/check-in",
+      "regex": "^/api/employees/check\\-in(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/employees/check\\-in(?:/)?$"
+    },
+    {
+      "page": "/api/employees/search",
+      "regex": "^/api/employees/search(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/employees/search(?:/)?$"
+    },
+    {
       "page": "/api/moodle/courses",
       "regex": "^/api/moodle/courses(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/moodle/courses(?:/)?$"
+    },
+    {
+      "page": "/check-in",
+      "regex": "^/check\\-in(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/check\\-in(?:/)?$"
+    },
+    {
+      "page": "/sign-in",
+      "regex": "^/sign\\-in(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/sign\\-in(?:/)?$"
     }
   ],
   "dataRoutes": [],
