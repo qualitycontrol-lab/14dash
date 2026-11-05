@@ -131,6 +131,27 @@ function Header({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
+function WelcomeHero() {
+  return (
+    <section className="mx-auto max-w-[1240px] px-4 pb-4 pt-12 text-center sm:pb-8 sm:pt-16">
+      <div className="mx-auto inline-flex items-center gap-2 rounded-full bg-[#d9f1ea] px-4 py-2 text-sm font-medium text-[#168f89]">
+        <Icon name="goal" size={16} />
+        <span>Your Growth Navigator</span>
+      </div>
+      <h1 className="mx-auto mt-6 max-w-[900px] text-4xl font-semibold leading-[1.05] tracking-[-0.06em] text-[#172523] sm:text-6xl">
+        Welcome to Your Center for{" "}
+        <span className="text-[#1ca5a0]">Continuous Improvement</span>
+      </h1>
+      <p className="mx-auto mt-6 max-w-[850px] text-lg leading-relaxed text-[#71807c] sm:text-[21px]">
+        Whether you&apos;re here to explore, address a challenge, grow your skills, or earn a
+        credential—your next step starts here.{" "}
+        <span className="font-semibold text-[#293a36]">Focus on Growth.</span>{" "}
+        We&apos;ll handle the roadmap.
+      </p>
+    </section>
+  );
+}
+
 function ImprovementProgram() {
   return (
     <section className="mx-auto mt-20 max-w-[1240px] px-4">
@@ -234,15 +255,6 @@ function CourseCards({
 function CalendarSection() {
   return (
     <section className="mx-auto mt-20 max-w-[1240px] px-4">
-      <div className="mb-14 flex items-center justify-center gap-7">
-        <button className="rounded-full border border-[#d8e1de] bg-[#f5f8f7] px-8 py-4 text-[20px] font-medium text-[#1d302d] shadow-sm">
-          Practice <Icon name="arrow" size={16} />
-        </button>
-        <button className="rounded-full border border-[#d8e1de] bg-[#f5f8f7] px-8 py-4 text-[20px] font-medium text-[#1d302d] shadow-sm">
-          Complete <Icon name="arrow" size={16} />
-        </button>
-      </div>
-
       <div className="grid gap-8 lg:grid-cols-[1.5fr_0.9fr]">
         <div className={`${outlineCard} p-8`}>
           <div className="mb-6 flex items-center justify-between">
@@ -383,9 +395,10 @@ export default function DashboardContent({
 }) {
   return (
     <main className="min-h-screen bg-[#eff3f1] text-[#11201d]">
-      <p className="mx-auto max-w-[1240px] px-4 pt-4 text-[18px] font-medium text-[#445954]">{welcomeMessage}</p>
       <Header isAdmin={isAdmin} />
       <div className="pb-16">
+        <WelcomeHero />
+        <p className="mx-auto max-w-[1240px] px-4 pt-2 text-center text-base font-medium text-[#445954]">{welcomeMessage}</p>
         <CalendarSection />
         <CourseCards courses={courses} courseError={courseError} moodleUrl={moodleUrl} />
         <ImprovementProgram />
