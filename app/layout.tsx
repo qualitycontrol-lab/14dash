@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "BON Training | Admin",
-  description: "Trainings, attendance, and people management.",
+  description: "Training sessions, attendance, and people management.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

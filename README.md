@@ -30,6 +30,24 @@ Google account email addresses (for example,
 The admin screens currently use clearly labeled preview data. Trainings added
 from the form are temporary and are not persisted.
 
+## Employee check-in
+
+The public `/check-in` page searches the Google Workspace domain directory and
+records confirmed attendance in a Google Sheet. Create or choose a spreadsheet
+and add a tab named `Attendance` (or set `GOOGLE_SHEETS_ATTENDANCE_SHEET` to a
+different tab name). The sheet should have columns for timestamp, training,
+employee name, and email.
+
+Set `GOOGLE_REFRESH_TOKEN` and `GOOGLE_SHEETS_SPREADSHEET_ID` in `.env.local`
+and in Vercel. Generate the refresh token for the same OAuth client as
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, granting both the Google
+Workspace directory read-only scope
+(`https://www.googleapis.com/auth/directory.readonly`) and the Sheets scope
+(`https://www.googleapis.com/auth/spreadsheets`). The OAuth account needs
+permission to search the domain directory and edit the selected spreadsheet.
+Keep the refresh token and spreadsheet ID server-side; never expose them in
+client code.
+
 ## Moodle courses
 
 Set `MOODLE_URL` to the Moodle site URL and `MOODLE_TOKEN` to a Moodle web
