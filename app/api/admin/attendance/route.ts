@@ -32,11 +32,11 @@ export async function GET() {
     const escapedSheetName = sheetName.replaceAll("'", "''");
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `'${escapedSheetName}'!A:D`,
+      range: `'${escapedSheetName}'!A:E`,
     });
 
     const entries = (response.data.values ?? []).flatMap((row) => {
-      const [timestamp, training, name, email] = row.map((value) => String(value ?? "").trim());
+      const [timestamp, training, name, email, category = ""] = row.map((value) => String(value ?? "").trim());
       const checkedInAt = new Date(timestamp);
 
       if (
@@ -52,6 +52,7 @@ export async function GET() {
       return [{
         checkedInAt: checkedInAt.toISOString(),
         training,
+        category,
         name,
         email: email.toLowerCase(),
       }];

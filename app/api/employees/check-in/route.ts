@@ -4,11 +4,13 @@ import {
   createGoogleOAuthClient,
   GoogleOAuthConfigurationError,
 } from "@/lib/google";
+import { isTrainingCategory } from "@/lib/attendance";
 
 type CheckInPayload = {
   name: string;
   email: string;
   training?: string;
+  category?: string;
 };
 
 function isCheckInPayload(value: unknown): value is CheckInPayload {
@@ -19,7 +21,8 @@ function isCheckInPayload(value: unknown): value is CheckInPayload {
     typeof value.name === "string" &&
     "email" in value &&
     typeof value.email === "string" &&
-    (!("training" in value) || typeof value.training === "string")
+    (!("training" in value) || typeof value.training === "string") &&
+    (!("category" in value) || typeof value.category === "string")
   );
 }
 
@@ -39,12 +42,14 @@ export async function POST(request: Request) {
   const name = payload.name.trim();
   const email = payload.email.trim().toLowerCase();
   const training = payload.training?.trim() || "Training check-in";
+  const category = payload.category?.trim() ?? "";
 
   if (
     !name ||
     name.length > 150 ||
     !/^[^\s@]+@bonadmin\.com$/.test(email) ||
-    training.length > 200
+    training.length > 200 ||
+    (category !== "" && !isTrainingCategory(category))
   ) {
     return NextResponse.json({ error: "Invalid attendance details." }, { status: 400 });
   }
@@ -66,11 +71,11 @@ export async function POST(request: Request) {
 
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: `'${escapedSheetName}'!A:D`,
+      range: `'${escapedSheetName}'!A:E`,
       valueInputOption: "RAW",
       insertDataOption: "INSERT_ROWS",
       requestBody: {
-        values: [[new Date().toISOString(), training, name, email]],
+        values: [[new Date().toISOString(), training, name, email, category]],
       },
     });
 

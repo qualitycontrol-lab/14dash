@@ -793,6 +793,7 @@ function PeopleView() {
 type AttendanceEntry = {
   checkedInAt: string;
   training: string;
+  category: string;
   name: string;
   email: string;
 };
@@ -805,6 +806,8 @@ function isAttendanceEntry(value: unknown): value is AttendanceEntry {
     typeof value.checkedInAt === "string" &&
     "training" in value &&
     typeof value.training === "string" &&
+    "category" in value &&
+    typeof value.category === "string" &&
     "name" in value &&
     typeof value.name === "string" &&
     "email" in value &&
@@ -868,23 +871,25 @@ function ReportingView() {
     .sort((a, b) => b.checkedInAt.localeCompare(a.checkedInAt));
 
   const uniqueEmployees = new Set(filteredEntries.map((entry) => entry.email.toLowerCase())).size;
-  const trainingSummary = Array.from(
+  const categorySummary = Array.from(
     filteredEntries.reduce((summary, entry) => {
-      const current = summary.get(entry.training) ?? { checkIns: 0, latestCheckIn: entry.checkedInAt };
-      summary.set(entry.training, {
+      const category = entry.category || "Uncategorized";
+      const current = summary.get(category) ?? { checkIns: 0, latestCheckIn: entry.checkedInAt };
+      summary.set(category, {
         checkIns: current.checkIns + 1,
         latestCheckIn: current.latestCheckIn > entry.checkedInAt ? current.latestCheckIn : entry.checkedInAt,
       });
       return summary;
     }, new Map<string, { checkIns: number; latestCheckIn: string }>()),
-    ([training, totals]) => ({ training, ...totals }),
+    ([category, totals]) => ({ category, ...totals }),
   ).sort((a, b) => b.checkIns - a.checkIns);
 
   function exportReport() {
     downloadCsv("attendance-report.csv", [
-      ["Checked in at", "Training", "Employee name", "Email"],
+      ["Checked in at", "Training category", "Training", "Employee name", "Email"],
       ...filteredEntries.map((entry) => [
         entry.checkedInAt,
+        entry.category,
         entry.training,
         entry.name,
         entry.email,
@@ -957,7 +962,7 @@ function ReportingView() {
             {[
               { label: "Employee check-ins", value: filteredEntries.length },
               { label: "Unique employees", value: uniqueEmployees },
-              { label: "Trainings with attendance", value: trainingSummary.length },
+              { label: "Categories with attendance", value: categorySummary.length },
             ].map((stat) => (
               <div key={stat.label} className="rounded-[16px] border border-[#d7e1dd] bg-[#f8fbf9] p-4">
                 <p className="text-xs font-medium text-[#71807c]">{stat.label}</p>
@@ -968,12 +973,12 @@ function ReportingView() {
 
           <section className="overflow-hidden rounded-[18px] border border-[#d7e1dd] bg-[#f8fbf9]">
             <div className="border-b border-[#dfe7e4] px-4 py-3 sm:px-5">
-              <h2 className="text-sm font-semibold text-[#243531]">Attendance by training</h2>
+              <h2 className="text-sm font-semibold text-[#243531]">Attendance by category</h2>
             </div>
-            {trainingSummary.length ? (
-              trainingSummary.map((summary) => (
-                <div key={summary.training} className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e5ebe8] px-4 py-3 last:border-b-0 sm:px-5">
-                  <span className="font-medium text-[#243531]">{summary.training}</span>
+            {categorySummary.length ? (
+              categorySummary.map((summary) => (
+                <div key={summary.category} className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e5ebe8] px-4 py-3 last:border-b-0 sm:px-5">
+                  <span className="font-medium text-[#243531]">{summary.category}</span>
                   <span className="text-sm text-[#536663]">
                     {summary.checkIns} check-ins <span aria-hidden="true">·</span> Latest{" "}
                     {new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(summary.latestCheckIn))}
@@ -991,13 +996,14 @@ function ReportingView() {
             <div className="border-b border-[#dfe7e4] px-4 py-3 sm:px-5">
               <h2 className="text-sm font-semibold text-[#243531]">Recent check-ins</h2>
             </div>
-            <div className="min-w-[640px]">
-              <div className="grid grid-cols-[1.2fr_1.2fr_1fr_1.2fr] gap-3 border-b border-[#dfe7e4] px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#71807c] sm:px-5">
-                <span>Checked in</span><span>Training</span><span>Employee</span><span>Email</span>
+            <div className="min-w-[820px]">
+              <div className="grid grid-cols-[1.2fr_1.4fr_1.2fr_1fr_1.2fr] gap-3 border-b border-[#dfe7e4] px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#71807c] sm:px-5">
+                <span>Checked in</span><span>Category</span><span>Training</span><span>Employee</span><span>Email</span>
               </div>
               {filteredEntries.map((entry, index) => (
-                <div key={`${entry.checkedInAt}-${entry.email}-${index}`} className="grid grid-cols-[1.2fr_1.2fr_1fr_1.2fr] gap-3 border-b border-[#e5ebe8] px-4 py-3 text-xs text-[#344743] last:border-b-0 sm:px-5">
+                <div key={`${entry.checkedInAt}-${entry.email}-${index}`} className="grid grid-cols-[1.2fr_1.4fr_1.2fr_1fr_1.2fr] gap-3 border-b border-[#e5ebe8] px-4 py-3 text-xs text-[#344743] last:border-b-0 sm:px-5">
                   <span>{new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.checkedInAt))}</span>
+                  <span>{entry.category || "—"}</span>
                   <span>{entry.training}</span>
                   <span>{entry.name}</span>
                   <span>{entry.email}</span>

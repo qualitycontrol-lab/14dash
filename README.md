@@ -40,7 +40,11 @@ The public `/check-in` page searches the Google Workspace domain directory and
 records confirmed attendance in a Google Sheet. Create or choose a spreadsheet
 and add a tab named `Attendance` (or set `GOOGLE_SHEETS_ATTENDANCE_SHEET` to a
 different tab name). The sheet should have columns for timestamp, training,
-employee name, and email.
+employee name, email, and training category. New check-ins write the category
+to column E, leaving the existing timestamp, training, name, and email columns
+unchanged. Check-in categories are Hubbard College of Administration, Center
+for Self Governance, Train the Trainer, Learning Forum, and Online Training
+Academy.
 
 Set `GOOGLE_REFRESH_TOKEN` and `GOOGLE_SHEETS_SPREADSHEET_ID` in `.env.local`
 and in Vercel. Generate the refresh token for the same OAuth client as

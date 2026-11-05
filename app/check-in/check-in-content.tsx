@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useState, type ChangeEvent } from "react";
+import {
+  isTrainingCategory,
+  TRAINING_CATEGORIES,
+  type TrainingCategory,
+} from "@/lib/attendance";
 
 type Employee = {
   name: string;
@@ -19,6 +24,7 @@ function isEmployee(value: unknown): value is Employee {
 }
 
 export default function CheckInContent() {
+  const [category, setCategory] = useState<TrainingCategory | "">("");
   const [query, setQuery] = useState("");
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
@@ -31,7 +37,7 @@ export default function CheckInContent() {
   useEffect(() => {
     const normalizedQuery = query.trim();
 
-    if (selectedEmployee || normalizedQuery.length < 2) {
+    if (!category || selectedEmployee || normalizedQuery.length < 2) {
       setEmployees([]);
       setIsSearching(false);
       setSearchError(null);
@@ -79,7 +85,7 @@ export default function CheckInContent() {
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [query, selectedEmployee]);
+  }, [category, query, selectedEmployee]);
 
   function updateQuery(event: ChangeEvent<HTMLInputElement>) {
     setQuery(event.target.value);
@@ -89,7 +95,7 @@ export default function CheckInContent() {
   }
 
   async function confirmAttendance() {
-    if (!selectedEmployee) {
+    if (!selectedEmployee || !category) {
       return;
     }
 
@@ -100,7 +106,7 @@ export default function CheckInContent() {
       const response = await fetch("/api/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(selectedEmployee),
+        body: JSON.stringify({ ...selectedEmployee, category }),
       });
 
       if (!response.ok) {
@@ -135,10 +141,34 @@ export default function CheckInContent() {
           Training Check-In
         </h1>
         <p className="mt-3 text-sm leading-6 text-[#536663]">
-          Search for your name and confirm your attendance.
+          Choose your training category, search for your name, and confirm your attendance.
         </p>
 
-        <label htmlFor="employee-search" className="mt-8 block text-sm font-semibold text-[#243531]">
+        <label htmlFor="training-category" className="mt-8 block text-sm font-semibold text-[#243531]">
+          Training category
+        </label>
+        <select
+          id="training-category"
+          value={category}
+          onChange={(event) => {
+            const value = event.currentTarget.value;
+            setCategory(isTrainingCategory(value) ? value : "");
+            setSelectedEmployee(null);
+            setEmployees([]);
+            setQuery("");
+            setCheckInError(null);
+          }}
+          disabled={checkedIn}
+          required
+          className="mt-2 h-12 w-full rounded-[12px] border border-[#cbd8d4] bg-white px-4 text-base text-[#243531] outline-none transition focus:border-[#168f89] focus:ring-2 focus:ring-[#168f89]/20 disabled:bg-[#eff3f1]"
+        >
+          <option value="">Select a training category</option>
+          {TRAINING_CATEGORIES.map((item) => (
+            <option key={item} value={item}>{item}</option>
+          ))}
+        </select>
+
+        <label htmlFor="employee-search" className="mt-6 block text-sm font-semibold text-[#243531]">
           Employee name
         </label>
         <input
@@ -149,8 +179,8 @@ export default function CheckInContent() {
           enterKeyHint="search"
           value={query}
           onChange={updateQuery}
-          disabled={checkedIn}
-          placeholder="Type your first or last name..."
+          disabled={checkedIn || !category}
+          placeholder={category ? "Type your first or last name..." : "Select a training category first"}
           aria-autocomplete="list"
           aria-controls="employee-results"
           aria-expanded={employees.length > 0}
@@ -204,6 +234,7 @@ export default function CheckInContent() {
               Check in as {selectedEmployee.name}?
             </p>
             <p className="mt-1 text-sm text-[#71807c]">{selectedEmployee.email}</p>
+            <p className="mt-2 text-sm text-[#536663]">Category: {category}</p>
             <button
               type="button"
               onClick={confirmAttendance}
