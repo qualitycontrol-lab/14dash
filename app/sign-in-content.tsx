@@ -12,7 +12,7 @@ export default function SignInContent() {
           </div>
           <div>
             <p className="text-xl font-semibold tracking-[-0.04em] text-[#1d2b28]">GrowthPath</p>
-            <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#70817d]">Admin access</p>
+            <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#70817d]">Training portal</p>
           </div>
         </div>
 
@@ -22,15 +22,15 @@ export default function SignInContent() {
             Sign in to continue
           </h1>
           <p className="mt-4 text-base leading-7 text-[#536663]">
-            Sign in with an approved BON Google account. If your account has not
-            been approved, contact your administrator.
+            Sign in with your BON Google account to continue. Approved
+            administrators will also see an option to switch to Admin view.
           </p>
         </div>
 
         <div className="mt-9">
           <button
             className="w-full rounded-[22px] border border-[#d7e1dd] bg-white p-6 text-left transition hover:border-[#1ca5a0] hover:shadow-[0_8px_24px_rgba(27,59,53,0.08)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#168f89]"
-            onClick={() => void signIn("google", { callbackUrl: "/admin" })}
+            onClick={() => void signIn("google", { callbackUrl: "/" })}
           >
             <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#d9f1ea] text-[#10857e]">
               <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -38,12 +38,12 @@ export default function SignInContent() {
                 <path d="M5 20a7 7 0 0 1 14 0" />
               </svg>
             </span>
-            <span className="mt-5 block text-xl font-semibold tracking-[-0.03em]">Approved administrators</span>
+            <span className="mt-5 block text-xl font-semibold tracking-[-0.03em]">BON Google account</span>
             <span className="mt-2 block text-sm leading-6 text-[#62736f]">
-              Manage trainings, people, and reporting.
+              Continue to the training portal. Admin access is shown only for approved accounts.
             </span>
             <span className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-[#117f79]">
-              Admin sign in <span aria-hidden="true">→</span>
+              Continue with Google <span aria-hidden="true">→</span>
             </span>
           </button>
         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { signIn } from "next-auth/react";
+import { signOut } from "next-auth/react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { MoodleCourse } from "@/lib/moodle";
@@ -120,10 +120,10 @@ function Header({ isAdmin }: { isAdmin: boolean }) {
           </Link>
         ) : (
           <button
-            className="ml-auto inline-flex h-11 items-center justify-center rounded-full bg-[#1aa6a1] px-6 text-[15px] font-semibold text-white shadow-[0_2px_0_rgba(0,0,0,0.04)] transition-transform hover:scale-[1.01]"
-            onClick={() => void signIn("google")}
+            className="ml-auto inline-flex h-11 items-center justify-center rounded-full border border-[#d7e1dd] px-6 text-[15px] font-semibold text-[#147e78] transition-colors hover:bg-[#eaf5f1]"
+            onClick={() => void signOut({ callbackUrl: "/sign-in" })}
           >
-            Sign In
+            Sign out
           </button>
         )}
       </div>

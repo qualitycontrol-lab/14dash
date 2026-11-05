@@ -25,8 +25,9 @@ To grant admin access, set `ADMIN_EMAILS` to a comma-separated list of exact
 Google account email addresses (for example,
 `admin1@bonadmin.com,admin2@bonadmin.com`) in `.env.local` and in Vercel. The
 site only serves the admin interface to accounts on this allowlist. Other
-visitors remain on the sign-in page. Approved administrators are sent directly
-to `/admin` after signing in.
+visitors can sign in with their BON Google account and reach the training
+portal. Approved administrators see an **Admin view** option in the portal to
+open `/admin`; the admin header's **Personal view** option returns to `/`.
 
 Most admin sections currently use clearly labeled preview data. Trainings
 added from the form are temporary and are not persisted. The Reporting section
