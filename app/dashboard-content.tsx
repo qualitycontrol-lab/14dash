@@ -121,53 +121,20 @@ function Header() {
   );
 }
 
-function Hero() {
+function ImprovementProgram() {
   return (
-    <section className="mx-auto max-w-[1240px] px-4 pt-12">
-      <div className="mx-auto max-w-[720px] text-center">
-        <div className="mb-8 inline-flex items-center justify-center rounded-full border border-[#b6d9d2] bg-[#d8f1ea] px-4 py-2 text-[13px] font-semibold text-[#0b7d75]">
-          <span className="mr-2 inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#1ca5a0] text-[10px] text-white">
-            <Icon name="check" size={10} />
-          </span>
-          Your Growth Navigator
+    <section className="mx-auto mt-20 max-w-[1240px] px-4">
+      <div className="rounded-[28px] border border-[#d8e1de] bg-[#f8faf9] p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.7)]">
+        <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-[#1d9ad7] text-white shadow-[inset_0_0_0_2px_rgba(255,255,255,0.5)]">
+          <Icon name="goal" size={28} />
         </div>
-
-        <h1 className="text-[68px] font-semibold tracking-[-0.07em] text-[#0f1f1d] leading-[0.95]">
-          Welcome to Your Center for
-          <span className="mt-2 block bg-gradient-to-r from-[#1ba49e] to-[#4db8a5] bg-clip-text text-transparent">Continuous Improvement</span>
-        </h1>
-
-        <p className="mx-auto mt-8 max-w-[720px] text-[22px] leading-[1.45] text-[#445954]">
-          Whether you&apos;re here to explore, address a challenge, grow your skills, or earn a credential—you&apos;re next step starts here. Focus on Growth. We&apos;ll handle the roadmap.
+        <h2 className="text-[36px] font-semibold tracking-[-0.05em] text-[#1a1f1d]">Improvement Program</h2>
+        <p className="mt-5 text-[20px] leading-[1.5] text-[#4c5e5c]">
+          Work with your coach to address specific areas for growth. A personalized path to clarity and resolution.
         </p>
-      </div>
-
-      <div className="mt-12 grid gap-8 md:grid-cols-2">
-        <div className="rounded-[28px] border border-[#d8e1de] bg-[#f8faf9] p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.7)]">
-          <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-[#1fa4a1] text-white shadow-[inset_0_0_0_2px_rgba(255,255,255,0.5)]">
-            <Icon name="book" size={28} />
-          </div>
-          <h2 className="text-[36px] font-semibold tracking-[-0.05em] text-[#1a1f1d]">Digital Library</h2>
-          <p className="mt-5 text-[20px] leading-[1.5] text-[#4c5e5c]">
-            Explore our comprehensive collection of articles, drills, worksheets, and resources. Build your knowledge foundation.
-          </p>
-          <button className="mt-8 flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#8d5bdb] to-[#b05bdd] py-4 text-[18px] font-semibold text-white">
-            Browse Library <Icon name="arrow" size={17} />
-          </button>
-        </div>
-
-        <div className="rounded-[28px] border border-[#d8e1de] bg-[#f8faf9] p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.7)]">
-          <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-[#1d9ad7] text-white shadow-[inset_0_0_0_2px_rgba(255,255,255,0.5)]">
-            <Icon name="goal" size={28} />
-          </div>
-          <h2 className="text-[36px] font-semibold tracking-[-0.05em] text-[#1a1f1d]">Improvement Program</h2>
-          <p className="mt-5 text-[20px] leading-[1.5] text-[#4c5e5c]">
-            Work with your coach to address specific areas for growth. A personalized path to clarity and resolution.
-          </p>
-          <button className="mt-8 flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#0a99ac] to-[#1ea7ab] py-4 text-[18px] font-semibold text-white">
-            Start Program <Icon name="arrow" size={17} />
-          </button>
-        </div>
+        <button className="mt-8 flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#0a99ac] to-[#1ea7ab] py-4 text-[18px] font-semibold text-white">
+          Start Program <Icon name="arrow" size={17} />
+        </button>
       </div>
     </section>
   );
@@ -207,13 +174,18 @@ function CourseCards({
               typeof course.progress === "number" && Number.isFinite(course.progress)
                 ? Math.min(100, Math.max(0, course.progress))
                 : null;
-            const courseUrl = `${moodleUrl.replace(/\/+$/, "")}/course/view.php?id=${encodeURIComponent(String(course.id))}`;
+            const courseUrl =
+              course.url ??
+              `${moodleUrl.replace(/\/+$/, "")}/course/view.php?id=${encodeURIComponent(String(course.id))}`;
 
             return (
               <article key={course.id} className={`${outlineCard} p-6`}>
                 <h3 className="text-[28px] font-semibold tracking-[-0.04em] text-[#14211f]">
                   {course.fullname}
                 </h3>
+                {course.summary && (
+                  <p className="mt-3 text-[17px] leading-[1.5] text-[#52635f]">{course.summary}</p>
+                )}
                 <div className="mt-6 flex items-center justify-between text-[14px] text-[#5e706e]">
                   <span>Progress</span>
                   <span className="font-semibold text-[#0f1f1d]">
@@ -402,9 +374,9 @@ export default function DashboardContent({
       <p className="mx-auto max-w-[1240px] px-4 pt-4 text-[18px] font-medium text-[#445954]">{welcomeMessage}</p>
       <Header />
       <div className="pb-16">
-        <Hero />
-        <CourseCards courses={courses} courseError={courseError} moodleUrl={moodleUrl} />
         <CalendarSection />
+        <CourseCards courses={courses} courseError={courseError} moodleUrl={moodleUrl} />
+        <ImprovementProgram />
         <SkillsList />
       </div>
     </main>

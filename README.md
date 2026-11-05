@@ -25,6 +25,8 @@ Sign-in is limited to Google accounts with an `@bonadmin.com` email address.
 ## Moodle courses
 
 Set `MOODLE_URL` to the Moodle site URL and `MOODLE_TOKEN` to a Moodle web
-service token in `.env.local` and in the Vercel environment. The dashboard uses
-the signed-in user's email to find their Moodle account and list their enrolled
-courses.
+service token in `.env.local` and in the Vercel environment. The dashboard and
+authenticated courses API currently use sample courses while server networking
+is being resolved. Replace the mock data in `lib/moodle.ts` and restore the
+Moodle lookup in `app/page.tsx` and `app/api/moodle/courses/route.ts` to resume
+showing enrolled courses.
