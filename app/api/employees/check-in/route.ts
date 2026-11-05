@@ -1,4 +1,3 @@
-import { getServerSession } from "next-auth";
 import { google } from "googleapis";
 import { NextResponse } from "next/server";
 import {
@@ -25,12 +24,6 @@ function isCheckInPayload(value: unknown): value is CheckInPayload {
 }
 
 export async function POST(request: Request) {
-  const session = await getServerSession();
-
-  if (!session?.user?.email?.trim().toLowerCase().endsWith("@bonadmin.com")) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
-
   let payload: unknown;
 
   try {

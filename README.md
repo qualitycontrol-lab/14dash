@@ -24,8 +24,9 @@ Sign-in is limited to Google accounts with an `@bonadmin.com` email address.
 To grant admin access, set `ADMIN_EMAILS` to a comma-separated list of exact
 Google account email addresses (for example,
 `admin1@bonadmin.com,admin2@bonadmin.com`) in `.env.local` and in Vercel. The
-`/admin` page checks this allowlist on the server. Admin accounts can choose
-**Admin view** from the sign-in page or their training portal header.
+site only serves the admin interface to accounts on this allowlist. Other
+visitors remain on the sign-in page. Approved administrators are sent directly
+to `/admin` after signing in.
 
 The admin screens currently use clearly labeled preview data. Trainings added
 from the form are temporary and are not persisted.
@@ -51,8 +52,7 @@ client code.
 ## Moodle courses
 
 Set `MOODLE_URL` to the Moodle site URL and `MOODLE_TOKEN` to a Moodle web
-service token in `.env.local` and in the Vercel environment. The dashboard and
-authenticated courses API currently use sample courses while server networking
-is being resolved. Replace the mock data in `lib/moodle.ts` and restore the
-Moodle lookup in `app/page.tsx` and `app/api/moodle/courses/route.ts` to resume
-showing enrolled courses.
+service token in `.env.local` and in the Vercel environment. The courses API
+currently uses sample courses while server networking is being resolved.
+Replace the mock data in `lib/moodle.ts` and restore the Moodle lookup in
+`app/api/moodle/courses/route.ts` to resume showing enrolled courses.
