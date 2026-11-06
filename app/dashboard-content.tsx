@@ -307,9 +307,12 @@ function CalendarSection() {
               <div className="flex items-center gap-3"><Icon name="user" size={16} /> Room 204</div>
               <div className="flex items-center gap-3"><Icon name="check" size={16} /> 12 expected</div>
             </div>
-            <button className="mt-7 flex w-full items-center justify-center gap-2 rounded-full border border-white/40 bg-white/10 px-4 py-3 text-[18px] font-semibold text-white">
+            <Link
+              href="/check-in"
+              className="mt-7 flex w-full items-center justify-center gap-2 rounded-full border border-white/40 bg-white/10 px-4 py-3 text-[18px] font-semibold text-white"
+            >
               Open check-in <Icon name="arrow" size={18} />
-            </button>
+            </Link>
           </div>
 
           <div className="rounded-[24px] border border-[#d7e1dd] bg-[#f7faf9] p-5">
