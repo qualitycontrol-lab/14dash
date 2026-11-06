@@ -2,8 +2,35 @@
 
 import { signOut } from "next-auth/react";
 import Link from "next/link";
-import type { ReactNode } from "react";
-import type { MoodleCourse } from "@/lib/moodle";
+import { useEffect, useState, type ReactNode } from "react";
+
+type Course = {
+  id: string | number;
+  courseId: string | number;
+  title: string;
+  summary: string;
+  progress: number;
+  status: string;
+  url: string;
+};
+
+function isCourse(value: unknown): value is Course {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const course = value as Record<string, unknown>;
+  return (
+    (typeof course.id === "string" || typeof course.id === "number") &&
+    (typeof course.courseId === "string" || typeof course.courseId === "number") &&
+    typeof course.title === "string" &&
+    typeof course.summary === "string" &&
+    typeof course.progress === "number" &&
+    Number.isFinite(course.progress) &&
+    typeof course.status === "string" &&
+    typeof course.url === "string"
+  );
+}
 
 function Icon({ name, size = 18 }: { name: string; size?: number }) {
   const common = {
@@ -172,14 +199,71 @@ function ImprovementProgram() {
 }
 
 function CourseCards({
-  courses,
-  courseError,
-  moodleUrl,
+  userEmail,
 }: {
-  courses: MoodleCourse[];
-  courseError: string | null;
-  moodleUrl: string;
+  userEmail: string;
 }) {
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [courseError, setCourseError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadCourses() {
+      setLoading(true);
+      setCourseError(null);
+
+      try {
+        const response = await fetch(
+          `/api/courses?email=${encodeURIComponent(userEmail)}`,
+          { signal: controller.signal },
+        );
+        const data: unknown = await response.json();
+
+        if (!response.ok) {
+          const message =
+            typeof data === "object" &&
+            data !== null &&
+            "error" in data &&
+            typeof data.error === "string"
+              ? data.error
+              : "Unable to load training courses.";
+          throw new Error(message);
+        }
+
+        if (
+          typeof data !== "object" ||
+          data === null ||
+          !("courses" in data) ||
+          !Array.isArray(data.courses) ||
+          !data.courses.every(isCourse)
+        ) {
+          throw new Error("The courses response was invalid.");
+        }
+
+        setCourses(data.courses);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        console.error("Failed to load courses:", error);
+        setCourses([]);
+        setCourseError(
+          error instanceof Error ? error.message : "Unable to load training courses.",
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadCourses();
+
+    return () => controller.abort();
+  }, [userEmail]);
+
   return (
     <section className="mx-auto mt-20 max-w-[1240px] px-4">
       <div className="mb-8 flex items-center gap-5">
@@ -189,55 +273,51 @@ function CourseCards({
         <h2 className="text-[42px] font-semibold tracking-[-0.06em] text-[#141d1b]">Your Training Courses</h2>
       </div>
 
-      {courseError ? (
+      {loading ? (
+        <p className={`${outlineCard} p-6 text-center text-[18px] text-[#4b615e]`}>
+          Loading training courses...
+        </p>
+      ) : courseError ? (
         <div role="alert" className={`${outlineCard} p-6 text-[18px] text-[#8b2f36]`}>
-          <h3 className="font-semibold">Unable to communicate with Moodle</h3>
-          <pre className="mt-3 whitespace-pre-wrap break-words font-sans">{courseError}</pre>
+          <h3 className="font-semibold">Unable to load training courses</h3>
+          <p className="mt-3 whitespace-pre-wrap break-words">{courseError}</p>
         </div>
       ) : courses.length === 0 ? (
         <p className={`${outlineCard} p-6 text-[18px] text-[#4b615e]`}>
-          No training courses currently assigned to your account
+          No active training courses found for this account.
         </p>
       ) : (
         <div className="grid gap-8 md:grid-cols-2">
           {courses.map((course) => {
-            const progress =
-              typeof course.progress === "number" && Number.isFinite(course.progress)
-                ? Math.min(100, Math.max(0, course.progress))
-                : null;
-            const courseUrl =
-              course.url ??
-              `${moodleUrl.replace(/\/+$/, "")}/course/view.php?id=${encodeURIComponent(String(course.id))}`;
+            const progress = Math.min(100, Math.max(0, course.progress));
 
             return (
               <article key={course.id} className={`${outlineCard} p-6`}>
                 <h3 className="text-[28px] font-semibold tracking-[-0.04em] text-[#14211f]">
-                  {course.fullname}
+                  {course.title}
                 </h3>
                 {course.summary && (
                   <p className="mt-3 text-[17px] leading-[1.5] text-[#52635f]">{course.summary}</p>
                 )}
                 <div className="mt-6 flex items-center justify-between text-[14px] text-[#5e706e]">
-                  <span>Progress</span>
+                  <span>{course.status}</span>
                   <span className="font-semibold text-[#0f1f1d]">
-                    {progress === null ? "Not available" : `${progress}%`}
+                    {progress}%
                   </span>
                 </div>
-                {progress !== null && (
-                  <div
-                    className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-[#e6ece9]"
-                    role="progressbar"
-                    aria-label={`${course.fullname} progress`}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={progress}
-                  >
-                    <div className="h-full rounded-full bg-[#1ca5a0]" style={{ width: `${progress}%` }} />
-                  </div>
-                )}
+                <div
+                  className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-[#e6ece9]"
+                  role="progressbar"
+                  aria-label={`${course.title} progress`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={progress}
+                >
+                  <div className="h-full rounded-full bg-[#1ca5a0]" style={{ width: `${progress}%` }} />
+                </div>
                 <a
                   className="mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-[#1ca5a0] py-4 text-[18px] font-semibold text-white"
-                  href={courseUrl}
+                  href={course.url}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -386,15 +466,11 @@ function SkillsList() {
 export default function DashboardContent({
   welcomeMessage,
   isAdmin,
-  courses,
-  courseError,
-  moodleUrl,
+  userEmail,
 }: {
   welcomeMessage: string;
   isAdmin: boolean;
-  courses: MoodleCourse[];
-  courseError: string | null;
-  moodleUrl: string;
+  userEmail: string;
 }) {
   return (
     <main className="min-h-screen bg-[#eff3f1] text-[#11201d]">
@@ -403,7 +479,7 @@ export default function DashboardContent({
         <WelcomeHero />
         <p className="mx-auto max-w-[1240px] px-4 pt-2 text-center text-base font-medium text-[#445954]">{welcomeMessage}</p>
         <CalendarSection />
-        <CourseCards courses={courses} courseError={courseError} moodleUrl={moodleUrl} />
+        <CourseCards userEmail={userEmail} />
         <ImprovementProgram />
         <SkillsList />
       </div>

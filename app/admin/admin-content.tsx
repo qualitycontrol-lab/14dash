@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import SellabilityEnrollments from "./sellability-enrollments";
 
 type TrainingType = "HCA" | "CSG" | "TTT" | "LF" | "OTA" | "WS" | "Misc";
 type TrainingStatus = "Upcoming" | "Completed";
@@ -17,7 +18,13 @@ type Training = {
   checkIns?: number;
   status: TrainingStatus;
 };
-type AdminSection = "Overview" | "Trainings" | "Start training" | "People & TIP" | "Reporting";
+type AdminSection =
+  | "Overview"
+  | "Trainings"
+  | "Start training"
+  | "People & TIP"
+  | "Reporting"
+  | "Sellability Courses";
 
 const trainingTypes: { code: TrainingType; name: string; tone: string }[] = [
   { code: "HCA", name: "Hubbard College of Administration", tone: "text-[#c77b3d] bg-[#fbe5d9]" },
@@ -36,7 +43,14 @@ const initialTrainings: Training[] = [
   { id: 4, title: "Learning Forum: Leadership", type: "LF", date: "2026-10-23", attendees: 30, bonAttendees: 18, attendeeType: "Other / Community", checkIns: 2, status: "Completed" },
 ];
 
-const navigation: AdminSection[] = ["Overview", "Trainings", "Start training", "People & TIP", "Reporting"];
+const navigation: AdminSection[] = [
+  "Overview",
+  "Trainings",
+  "Start training",
+  "People & TIP",
+  "Reporting",
+  "Sellability Courses",
+];
 
 function formatDate(date: string): string {
   return new Intl.DateTimeFormat("en", {
@@ -1070,7 +1084,9 @@ export default function AdminContent({ adminName }: { adminName: string }) {
       </header>
 
       <div className="mx-auto max-w-[1240px] px-4 py-8 sm:py-10">
-        {activeSection !== "People & TIP" && activeSection !== "Reporting" && (
+        {activeSection !== "People & TIP" &&
+          activeSection !== "Reporting" &&
+          activeSection !== "Sellability Courses" && (
           <div className="mb-8 flex items-start gap-3 rounded-[16px] border border-[#bddbd4] bg-[#e5f3ed] px-4 py-3 text-sm text-[#3d6258]">
             <span className="mt-0.5 font-bold" aria-hidden="true">i</span>
             <p><strong>Preview data.</strong> Sample records are shown for layout review. Changes made here are temporary and won’t be saved.</p>
@@ -1084,6 +1100,7 @@ export default function AdminContent({ adminName }: { adminName: string }) {
         {activeSection === "Start training" && <TrainingForm onCreate={createTraining} />}
         {activeSection === "People & TIP" && <PeopleView />}
         {activeSection === "Reporting" && <ReportingView />}
+        {activeSection === "Sellability Courses" && <SellabilityEnrollments />}
       </div>
     </main>
   );

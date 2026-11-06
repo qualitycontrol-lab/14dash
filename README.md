@@ -63,3 +63,17 @@ service token in `.env.local` and in the Vercel environment. The courses API
 currently uses sample courses while server networking is being resolved.
 Replace the mock data in `lib/moodle.ts` and restore the Moodle lookup in
 `app/api/moodle/courses/route.ts` to resume showing enrolled courses.
+
+## Sellability courses API
+
+Set `SELLABILITY_API_KEY` in `.env.local` and in the Vercel environment. The
+server-side `GET /api/courses?email=<email>` endpoint uses this key to load
+Sellability courses for the signed-in user. Only administrators listed in
+`ADMIN_EMAILS` can request courses for another email address. Course results
+are not cached because they contain account-specific enrollment data.
+
+Administrators can view all Sellability enrollments from the **Sellability
+Courses** tab in `/admin`. The `GET /api/admin/enrollments` endpoint joins
+Sellability courses, students, and enrollments; upstream data is revalidated
+every 60 seconds. The admin view supports student search, course and status
+filters, and CSV export of the filtered results.
