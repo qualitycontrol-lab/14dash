@@ -19,6 +19,34 @@ function isSellabilityRecord(value: unknown): value is SellabilityRecord {
   );
 }
 
+function unwrapSellabilityRecord(value: unknown, key: string): SellabilityRecord | null {
+  const record =
+    isRecord(value) && isRecord(value[key]) ? value[key] : value;
+  return isSellabilityRecord(record) ? record : null;
+}
+
+function sellabilityRecords(
+  value: unknown,
+  pluralKey: string,
+  singularKey: string,
+): SellabilityRecord[] | null {
+  const records =
+    Array.isArray(value)
+      ? value
+      : isRecord(value) && Array.isArray(value[pluralKey])
+        ? value[pluralKey]
+        : null;
+  if (!records) return null;
+
+  const unwrapped = records.map((record) =>
+    unwrapSellabilityRecord(record, singularKey),
+  );
+  if (unwrapped.some((record) => record === null)) return null;
+  return unwrapped.filter(
+    (record): record is SellabilityRecord => record !== null,
+  );
+}
+
 function idKey(value: unknown): string | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return String(value);
@@ -106,9 +134,9 @@ export async function GET(request: Request) {
       enrollmentsRes.json() as Promise<unknown>,
     ]);
 
+    const courses = sellabilityRecords(coursesData, "courses", "course");
     if (
-      !Array.isArray(coursesData) ||
-      !coursesData.every(isSellabilityRecord) ||
+      !courses ||
       !Array.isArray(enrollmentsData) ||
       !enrollmentsData.every(isSellabilityRecord)
     ) {
@@ -118,11 +146,10 @@ export async function GET(request: Request) {
 
     const studentsById = new Map<string, Record<string, unknown>>();
     for (const enrollment of enrollmentsData) {
-      if (isRecord(enrollment.student)) {
-        const studentId = idKey(enrollment.student.id);
-        if (studentId) {
-          studentsById.set(studentId, enrollment.student);
-        }
+      const embeddedStudent = unwrapSellabilityRecord(enrollment.student, "student");
+      const studentId = embeddedStudent ? idKey(embeddedStudent.id) : null;
+      if (embeddedStudent && studentId) {
+        studentsById.set(studentId, embeddedStudent);
       }
     }
 
@@ -130,10 +157,16 @@ export async function GET(request: Request) {
       ...new Set(
         enrollmentsData
           .filter((enrollment) => {
-            const studentId = idKey(enrollment.student_id);
+            const student =
+              unwrapSellabilityRecord(enrollment.student, "student");
+            const studentId = idKey(enrollment.student_id) ?? idKey(student?.id);
             return studentId !== null && !studentsById.has(studentId);
           })
-          .map((enrollment) => idKey(enrollment.student_id))
+          .map((enrollment) => {
+            const student =
+              unwrapSellabilityRecord(enrollment.student, "student");
+            return idKey(enrollment.student_id) ?? idKey(student?.id);
+          })
           .filter((studentId): studentId is string => studentId !== null),
       ),
     ];
@@ -151,11 +184,12 @@ export async function GET(request: Request) {
           return null;
         }
         const data: unknown = await response.json();
-        if (!isSellabilityRecord(data)) {
+        const student = unwrapSellabilityRecord(data, "student");
+        if (!student) {
           console.warn("Sellability returned invalid student details:", studentId);
           return null;
         }
-        return data;
+        return student;
       }),
     );
     for (const student of studentDetails) {
@@ -166,14 +200,25 @@ export async function GET(request: Request) {
     }
 
     const coursesById = new Map<string, SellabilityRecord>();
-    for (const course of coursesData) {
+    for (const course of courses) {
       const courseId = idKey(course.id);
       if (courseId) coursesById.set(courseId, course);
+    }
+    for (const enrollment of enrollmentsData) {
+      const embeddedCourse = unwrapSellabilityRecord(enrollment.course, "course");
+      const courseId = idKey(enrollment.course_id) ?? idKey(embeddedCourse?.id);
+      if (embeddedCourse && courseId && !coursesById.has(courseId)) {
+        coursesById.set(courseId, embeddedCourse);
+      }
     }
     const unresolvedCourseIds = [
       ...new Set(
         enrollmentsData
-          .map((enrollment) => idKey(enrollment.course_id))
+          .map((enrollment) => {
+            const embeddedCourse =
+              unwrapSellabilityRecord(enrollment.course, "course");
+            return idKey(enrollment.course_id) ?? idKey(embeddedCourse?.id);
+          })
           .filter((courseId): courseId is string => courseId !== null && !coursesById.has(courseId)),
       ),
     ];
@@ -191,11 +236,12 @@ export async function GET(request: Request) {
           return null;
         }
         const data: unknown = await response.json();
-        if (!isSellabilityRecord(data)) {
+        const course = unwrapSellabilityRecord(data, "course");
+        if (!course) {
           console.warn("Sellability returned invalid course details:", courseId);
           return null;
         }
-        return data;
+        return course;
       }),
     );
     for (const course of courseDetails) {
@@ -208,8 +254,10 @@ export async function GET(request: Request) {
     let unmatchedStudentCount = 0;
     let unmatchedCourseCount = 0;
     const enrollments = enrollmentsData.map((enrollment) => {
-      const studentId = idKey(enrollment.student_id);
-      const courseId = idKey(enrollment.course_id);
+      const embeddedStudent = unwrapSellabilityRecord(enrollment.student, "student");
+      const embeddedCourse = unwrapSellabilityRecord(enrollment.course, "course");
+      const studentId = idKey(enrollment.student_id) ?? idKey(embeddedStudent?.id);
+      const courseId = idKey(enrollment.course_id) ?? idKey(embeddedCourse?.id);
       const student = studentId ? studentsById.get(studentId) : undefined;
       const course = courseId ? coursesById.get(courseId) : undefined;
 
@@ -218,6 +266,8 @@ export async function GET(request: Request) {
 
       const startedAt = dateValue(enrollment.started_at);
       const completedAt = dateValue(enrollment.completed_at);
+      const enrolledAt = dateValue(enrollment.enrolled_at ?? enrollment.created_at);
+      const expiresAt = dateValue(enrollment.expires_at);
       const status = completedAt
         ? "Completed"
         : startedAt
@@ -235,12 +285,18 @@ export async function GET(request: Request) {
         studentEmail:
           typeof student?.email === "string" ? student.email.trim() : "N/A",
         courseTitle:
-          firstName(course?.name, course?.title) ?? "Assigned Course",
+          firstName(course?.name, course?.title, enrollment.custom_name) ??
+          "Online Training Course",
+        courseId,
         status,
         progressPercentage: completedAt ? 100 : startedAt ? 50 : 0,
+        enrolledAt,
         startedAt,
         completedAt,
-        courseUrl: `${BASE_URL.replace("/api/v1", "")}/courses/${encodeURIComponent(courseId ?? "")}`,
+        expiresAt,
+        courseUrl: courseId
+          ? `${BASE_URL.replace("/api/v1", "")}/manage/courses/${encodeURIComponent(courseId)}`
+          : null,
       };
     });
 
@@ -254,7 +310,7 @@ export async function GET(request: Request) {
         unmatchedStudentCount,
         unmatchedCourseCount,
         studentCount: studentsById.size,
-        courseCount: coursesData.length,
+        courseCount: courses.length,
       });
     }
 

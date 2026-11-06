@@ -5,14 +5,17 @@ import { useEffect, useMemo, useState } from "react";
 type EnrollmentStatus = "Completed" | "In Progress" | "Not Started";
 type Enrollment = {
   enrollmentId: string | number;
+  courseId: string | null;
   studentName: string;
   studentEmail: string;
   courseTitle: string;
   status: EnrollmentStatus;
   progressPercentage: number;
+  enrolledAt: string | null;
   startedAt: string | null;
   completedAt: string | null;
-  courseUrl: string;
+  expiresAt: string | null;
+  courseUrl: string | null;
 };
 
 const statuses: Array<"All" | EnrollmentStatus> = [
@@ -31,6 +34,7 @@ function isEnrollment(value: unknown): value is Enrollment {
   return (
     (typeof enrollment.enrollmentId === "string" ||
       typeof enrollment.enrollmentId === "number") &&
+    (typeof enrollment.courseId === "string" || enrollment.courseId === null) &&
     typeof enrollment.studentName === "string" &&
     typeof enrollment.studentEmail === "string" &&
     typeof enrollment.courseTitle === "string" &&
@@ -38,10 +42,24 @@ function isEnrollment(value: unknown): value is Enrollment {
       enrollment.status === "In Progress" ||
       enrollment.status === "Not Started") &&
     typeof enrollment.progressPercentage === "number" &&
+    (typeof enrollment.enrolledAt === "string" || enrollment.enrolledAt === null) &&
     (typeof enrollment.startedAt === "string" || enrollment.startedAt === null) &&
     (typeof enrollment.completedAt === "string" || enrollment.completedAt === null) &&
-    typeof enrollment.courseUrl === "string"
+    (typeof enrollment.expiresAt === "string" || enrollment.expiresAt === null) &&
+    (typeof enrollment.courseUrl === "string" || enrollment.courseUrl === null)
   );
+}
+
+function formatDate(value: string | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
 }
 
 function downloadCsv(enrollments: Enrollment[]) {
@@ -49,11 +67,14 @@ function downloadCsv(enrollments: Enrollment[]) {
     ["Student Name", (enrollment) => enrollment.studentName],
     ["Student Email", (enrollment) => enrollment.studentEmail],
     ["Course Title", (enrollment) => enrollment.courseTitle],
+    ["Course ID", (enrollment) => enrollment.courseId ?? ""],
     ["Progress", (enrollment) => `${enrollment.progressPercentage}%`],
     ["Status", (enrollment) => enrollment.status],
+    ["Enrolled At", (enrollment) => enrollment.enrolledAt ?? ""],
     ["Started At", (enrollment) => enrollment.startedAt ?? ""],
     ["Completed At", (enrollment) => enrollment.completedAt ?? ""],
-    ["Course URL", (enrollment) => enrollment.courseUrl],
+    ["Expires At", (enrollment) => enrollment.expiresAt ?? ""],
+    ["Course URL", (enrollment) => enrollment.courseUrl ?? ""],
   ];
   const rows = [
     columns.map(([heading]) => heading),
@@ -290,13 +311,15 @@ export default function SellabilityEnrollments() {
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[850px] border-collapse text-left">
+            <table className="w-full min-w-[1120px] border-collapse text-left">
               <thead className="bg-[#f3f7f5] text-[10px] font-semibold uppercase tracking-[0.12em] text-[#71807c]">
                 <tr>
                   <th scope="col" className="px-5 py-4">Student</th>
                   <th scope="col" className="px-5 py-4">Course</th>
+                  <th scope="col" className="px-5 py-4">Enrolled Date</th>
                   <th scope="col" className="w-52 px-5 py-4">Progress</th>
                   <th scope="col" className="px-5 py-4">Status</th>
+                  <th scope="col" className="px-5 py-4">Completion Date</th>
                   <th scope="col" className="px-5 py-4"><span className="sr-only">Course link</span></th>
                 </tr>
               </thead>
@@ -316,8 +339,16 @@ export default function SellabilityEnrollments() {
                         <p className="font-semibold text-[#172523]">{enrollment.studentName}</p>
                         <p className="mt-1 text-xs text-[#71807c]">{enrollment.studentEmail}</p>
                       </td>
-                      <td className="px-5 py-4 text-sm font-medium text-[#344743]">
-                        {enrollment.courseTitle}
+                      <td className="px-5 py-4">
+                        <p className="text-sm font-semibold text-[#344743]">
+                          {enrollment.courseTitle}
+                        </p>
+                        <p className="mt-1 text-xs text-[#71807c]">
+                          {enrollment.courseId ? `Course ID: ${enrollment.courseId}` : "Course ID unavailable"}
+                        </p>
+                      </td>
+                      <td className="whitespace-nowrap px-5 py-4 text-sm text-[#536663]">
+                        {formatDate(enrollment.enrolledAt)}
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
@@ -344,15 +375,22 @@ export default function SellabilityEnrollments() {
                           {enrollment.status}
                         </span>
                       </td>
+                      <td className="whitespace-nowrap px-5 py-4 text-sm text-[#536663]">
+                        {formatDate(enrollment.completedAt)}
+                      </td>
                       <td className="px-5 py-4 text-right">
-                        <a
-                          href={enrollment.courseUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex whitespace-nowrap rounded-full border border-[#b8d5ce] px-4 py-2 text-xs font-semibold text-[#1b8076] transition-colors hover:bg-[#eaf5f1]"
-                        >
-                          Open course
-                        </a>
+                        {enrollment.courseUrl ? (
+                          <a
+                            href={enrollment.courseUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex whitespace-nowrap rounded-full border border-[#b8d5ce] px-4 py-2 text-xs font-semibold text-[#1b8076] transition-colors hover:bg-[#eaf5f1]"
+                          >
+                            Open course
+                          </a>
+                        ) : (
+                          <span className="text-xs text-[#71807c]">Unavailable</span>
+                        )}
                       </td>
                     </tr>
                   );

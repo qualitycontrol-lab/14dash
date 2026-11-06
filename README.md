@@ -79,8 +79,10 @@ enrollment student and course IDs and returns pages of 100 using Sellability's
 `offset` parameter. Enrollment data is revalidated every 60 seconds; course
 details are cached daily and student details hourly. The admin view supports
 page navigation, on-page student search, course and status filters, and CSV
-export of the filtered results. Summary metrics are for the current page
-because the Sellability total-count response is not available.
+export of the filtered results, including enrollment dates and course IDs.
+Course links open the Sellability management page and require appropriate
+Sellability access. Summary metrics are for the current page because the
+Sellability total-count response is not available.
 
 The **People & TIP** passport looks up the selected sample roster name as an
 exact match in the Google Workspace directory, then loads that employee's
