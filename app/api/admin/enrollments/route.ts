@@ -19,6 +19,23 @@ function isSellabilityRecord(value: unknown): value is SellabilityRecord {
   );
 }
 
+function idKey(value: unknown): string | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  return null;
+}
+
+function firstName(...values: unknown[]): string | null {
+  const name = values.find(
+    (value): value is string => typeof value === "string" && Boolean(value.trim()),
+  );
+  return name?.trim() ?? null;
+}
+
 function dateValue(value: unknown): string | null {
   if (typeof value !== "string" && typeof value !== "number") {
     return null;
@@ -89,19 +106,22 @@ export async function GET() {
     }
 
     const studentsById = new Map(
-      studentsData.map((student) => [String(student.id), student]),
+      studentsData.map((student) => [idKey(student.id), student]),
     );
     const coursesById = new Map(
-      coursesData.map((course) => [String(course.id), course]),
+      coursesData.map((course) => [idKey(course.id), course]),
     );
 
-    const enrollments = enrollmentsData.flatMap((enrollment) => {
-      const student = studentsById.get(String(enrollment.student_id));
-      const course = coursesById.get(String(enrollment.course_id));
+    let unmatchedStudentCount = 0;
+    let unmatchedCourseCount = 0;
+    const enrollments = enrollmentsData.map((enrollment) => {
+      const studentId = idKey(enrollment.student_id);
+      const courseId = idKey(enrollment.course_id);
+      const student = studentId ? studentsById.get(studentId) : undefined;
+      const course = courseId ? coursesById.get(courseId) : undefined;
 
-      if (!student || !course) {
-        return [];
-      }
+      if (!student) unmatchedStudentCount += 1;
+      if (!course) unmatchedCourseCount += 1;
 
       const startedAt = dateValue(enrollment.started_at);
       const completedAt = dateValue(enrollment.completed_at);
@@ -111,27 +131,39 @@ export async function GET() {
           ? "In Progress"
           : "Not Started";
 
-      return [
-        {
-          enrollmentId: enrollment.id,
-          studentName:
-            typeof student.name === "string" && student.name.trim()
-              ? student.name.trim()
-              : [student.first_name, student.last_name]
-                  .filter((name): name is string => typeof name === "string" && Boolean(name.trim()))
-                  .join(" ") || "Unknown Student",
-          studentEmail:
-            typeof student.email === "string" ? student.email.trim() : "",
-          courseTitle:
-            typeof course.name === "string" ? course.name : "Untitled Course",
-          status,
-          progressPercentage: completedAt ? 100 : startedAt ? 50 : 0,
-          startedAt,
-          completedAt,
-          courseUrl: `${BASE_URL.replace("/api/v1", "")}/courses/${encodeURIComponent(String(course.id))}`,
-        },
-      ];
+      return {
+        enrollmentId: enrollment.id,
+        studentName: student
+          ? firstName(
+              student.name,
+              `${firstName(student.given_name, student.first_name) ?? ""} ${firstName(student.family_name, student.last_name) ?? ""}`,
+            ) ?? "Unknown Student"
+          : "Unassigned / Archived User",
+        studentEmail:
+          typeof student?.email === "string" ? student.email.trim() : "N/A",
+        courseTitle:
+          firstName(course?.name, course?.title) ?? "Assigned Course",
+        status,
+        progressPercentage: completedAt ? 100 : startedAt ? 50 : 0,
+        startedAt,
+        completedAt,
+        courseUrl: `${BASE_URL.replace("/api/v1", "")}/courses/${encodeURIComponent(courseId ?? "")}`,
+      };
     });
+
+    if (
+      enrollmentsData.length === 0 ||
+      unmatchedStudentCount > 0 ||
+      unmatchedCourseCount > 0
+    ) {
+      console.warn("Sellability enrollment data counts:", {
+        enrollmentCount: enrollmentsData.length,
+        unmatchedStudentCount,
+        unmatchedCourseCount,
+        studentCount: studentsData.length,
+        courseCount: coursesData.length,
+      });
+    }
 
     return jsonResponse(enrollments);
   } catch (error) {
