@@ -411,6 +411,7 @@ type PersonRecord = {
   goals: string[];
   courses: PassportCourse[];
 };
+type RecentPerson = Pick<PersonRecord, "id" | "name" | "email" | "role" | "department">;
 type SellabilityCourseResponse = {
   id: string | number;
   title: string;
@@ -437,6 +438,9 @@ const categoryStyles: Record<TrainingType, { label: string; tone: string; border
   Misc: { label: "Miscellaneous", tone: "bg-[#e9eeeb] text-[#65726e]", border: "border-[#aab5b0]" },
 };
 
+const RECENT_PEOPLE_STORAGE_KEY = "14dash.people-tip.recent-employees";
+const MAX_RECENT_PEOPLE = 10;
+
 function initialsFor(name: string): string {
   return name.split(/\s+/).slice(0, 2).map((part) => part[0] ?? "").join("").toUpperCase();
 }
@@ -450,6 +454,17 @@ function isDirectoryEmployee(value: unknown): value is DirectoryEmployee {
     isRecord(value) &&
     typeof value.name === "string" &&
     typeof value.email === "string"
+  );
+}
+
+function isRecentPerson(value: unknown): value is RecentPerson {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    typeof value.email === "string" &&
+    typeof value.role === "string" &&
+    typeof value.department === "string"
   );
 }
 
@@ -474,6 +489,8 @@ function isSellabilityCourse(value: unknown): value is SellabilityCourseResponse
 
 function PeopleView() {
   const [people, setPeople] = useState<PersonRecord[]>([]);
+  const [recentPeople, setRecentPeople] = useState<PersonRecord[]>([]);
+  const [recentPeopleLoaded, setRecentPeopleLoaded] = useState(false);
   const [selectedId, setSelectedId] = useState("");
   const [search, setSearch] = useState("");
   const [directoryLoading, setDirectoryLoading] = useState(false);
@@ -489,13 +506,37 @@ function PeopleView() {
   const [sellabilityLoading, setSellabilityLoading] = useState(true);
   const [sellabilityError, setSellabilityError] = useState<string | null>(null);
 
-  const selectedPerson = people.find((person) => person.id === selectedId);
+  const selectedPerson = [...recentPeople, ...people].find(
+    (person) => person.id === selectedId,
+  );
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(RECENT_PEOPLE_STORAGE_KEY);
+      if (saved) {
+        const parsed: unknown = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const restored = parsed.filter(isRecentPerson).slice(0, MAX_RECENT_PEOPLE);
+          setRecentPeople(restored.map((person) => ({
+            ...person,
+            trainer: "Unassigned",
+            started: "",
+            goals: [],
+            courses: [],
+          })));
+        }
+      }
+    } catch (error) {
+      console.error("Unable to load recently viewed employees:", error);
+    } finally {
+      setRecentPeopleLoaded(true);
+    }
+  }, []);
 
   useEffect(() => {
     const query = search.trim();
     if (query.length < 2) {
       setPeople([]);
-      setSelectedId("");
       setDirectoryError(null);
       setDirectoryLoading(false);
       return;
@@ -507,6 +548,7 @@ function PeopleView() {
 
     const timeoutId = window.setTimeout(async () => {
       try {
+        setPeople([]);
         const response = await fetch(
           `/api/employees/search?q=${encodeURIComponent(query)}`,
           { signal: controller.signal, cache: "no-store" },
@@ -548,7 +590,6 @@ function PeopleView() {
         if (controller.signal.aborted) return;
         console.error("People & TIP employee search failed:", error);
         setPeople([]);
-        setSelectedId("");
         setDirectoryError(
           error instanceof Error ? error.message : "Unable to search the employee directory.",
         );
@@ -654,7 +695,7 @@ function PeopleView() {
         ...(sellabilityPersonId === selectedPerson.id ? sellabilityCourses : []),
       ]
     : [];
-  const filteredPeople = people;
+  const filteredPeople = search.trim().length >= 2 ? people : recentPeople;
   const confirmedCount = selectedCourses.filter((course) => course.status === "Confirmed").length;
   const pendingCount = selectedCourses.filter((course) => course.status === "Awaiting confirmation").length;
   const filteredCourses = selectedCourses.filter((course) => category === "All" || course.type === category);
@@ -664,9 +705,51 @@ function PeopleView() {
   }));
 
   function updateSelectedPerson(update: (person: PersonRecord) => PersonRecord) {
+    if (!selectedPerson) return;
+    const updatedPerson = update(selectedPerson);
     setPeople((current) =>
-      current.map((person) => person.id === selectedId ? update(person) : person),
+      current.map((person) => person.id === selectedId ? updatedPerson : person),
     );
+    setRecentPeople((current) => {
+      const next = current.map((person) =>
+        person.id === selectedId ? updatedPerson : person,
+      );
+      try {
+        window.localStorage.setItem(
+          RECENT_PEOPLE_STORAGE_KEY,
+          JSON.stringify(next.map(({ id, name, email, role, department }) => ({
+            id, name, email, role, department,
+          }))),
+        );
+      } catch (error) {
+        console.error("Unable to save recently viewed employees:", error);
+      }
+      return next;
+    });
+  }
+
+  function selectEmployee(person: PersonRecord) {
+    const employee = recentPeople.find((recent) => recent.id === person.id) ?? person;
+    setSelectedId(employee.id);
+    setCategory("All");
+    setNotice("");
+    setRecentPeople((current) => {
+      const next = [
+        employee,
+        ...current.filter((recent) => recent.id !== employee.id),
+      ].slice(0, MAX_RECENT_PEOPLE);
+      try {
+        window.localStorage.setItem(
+          RECENT_PEOPLE_STORAGE_KEY,
+          JSON.stringify(next.map(({ id, name, email, role, department }) => ({
+            id, name, email, role, department,
+          }))),
+        );
+      } catch (error) {
+        console.error("Unable to save recently viewed employees:", error);
+      }
+      return next;
+    });
   }
 
   function addCourse(event: FormEvent<HTMLFormElement>) {
@@ -714,7 +797,9 @@ function PeopleView() {
         <div className="mb-3 flex items-center justify-between gap-2">
           <h1 className="text-xl font-semibold tracking-[-0.04em] text-[#172523]">Roster</h1>
           <span className="text-right text-[10px] text-[#71807c]">
-            {people.length} {people.length === 1 ? "employee" : "employees"}
+            {search.trim().length >= 2
+              ? `${people.length} ${people.length === 1 ? "match" : "matches"}`
+              : `${recentPeople.length} recent`}
           </span>
         </div>
         <label className="block">
@@ -725,7 +810,6 @@ function PeopleView() {
             onChange={(event) => {
               setSearch(event.target.value);
               setPeople([]);
-              setSelectedId("");
               setCategory("All");
               setNotice("");
             }}
@@ -744,9 +828,9 @@ function PeopleView() {
               {directoryError}
             </p>
           )}
-          {!directoryLoading && !directoryError && search.trim().length < 2 && (
+          {!directoryLoading && !directoryError && search.trim().length < 2 && recentPeopleLoaded && recentPeople.length === 0 && (
             <p className="px-2 py-6 text-center text-sm text-[#71807c]">
-              Enter at least 2 characters to search employees.
+              Search for an employee. Selected employees will appear here as recent.
             </p>
           )}
           {filteredPeople.map((person, index) => {
@@ -754,7 +838,7 @@ function PeopleView() {
             return (
               <button
                 key={person.id}
-                onClick={() => { setSelectedId(person.id); setCategory("All"); setNotice(""); }}
+                onClick={() => selectEmployee(person)}
                 aria-pressed={selected}
                 className={`flex w-full items-center gap-2 rounded-[12px] border px-2.5 py-2 text-left transition ${
                   selected ? "border-[#8cb7aa] bg-white shadow-sm" : "border-transparent hover:bg-white"
