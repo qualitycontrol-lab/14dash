@@ -401,8 +401,9 @@ type PassportCourse = {
   source?: "sellability";
 };
 type PersonRecord = {
-  id: number;
+  id: string;
   name: string;
+  email: string;
   role: string;
   department: string;
   trainer: string;
@@ -419,6 +420,12 @@ type SellabilityCourseResponse = {
   completedAt?: string | null;
   url?: string;
 };
+type DirectoryEmployee = {
+  name: string;
+  email: string;
+  role?: string;
+  department?: string;
+};
 
 const categoryStyles: Record<TrainingType, { label: string; tone: string; border: string }> = {
   HCA: { label: "Hubbard College of Administration", tone: "bg-[#fbe5d9] text-[#b56833]", border: "border-[#d99568]" },
@@ -430,62 +437,20 @@ const categoryStyles: Record<TrainingType, { label: string; tone: string; border
   Misc: { label: "Miscellaneous", tone: "bg-[#e9eeeb] text-[#65726e]", border: "border-[#aab5b0]" },
 };
 
-const initialPeople: PersonRecord[] = [
-  {
-    id: 1, name: "Maria Chen", role: "Field Coordinator", department: "Field Ops", trainer: "Juliana Kim", started: "2026-01-15",
-    goals: ["Advanced Governance Practicum", "Trainer Shadowing", "Certification Exam"],
-    courses: [
-      { id: 1, title: "Foundations in Self Governance", type: "CSG", date: "2026-03-12", status: "Confirmed" },
-      { id: 2, title: "Poli-Ticks: Living a Politically Disease-Free Life", type: "CSG", date: "2026-05-02", status: "Confirmed" },
-      { id: 3, title: "Governance Case Studies", type: "CSG", date: "2026-08-21", status: "Awaiting confirmation" },
-      { id: 4, title: "Administration Basics", type: "HCA", date: "2026-04-04", status: "Confirmed" },
-      { id: 5, title: "People Leadership", type: "HCA", date: "2026-06-18", status: "Confirmed" },
-      { id: 6, title: "Online Academy: Core Skills", type: "OTA", date: "2026-07-09", status: "Awaiting confirmation" },
-      { id: 20, title: "Policy Leadership", type: "HCA", date: "2026-07-30", status: "Confirmed" },
-    ],
-  },
-  { id: 2, name: "James Whitfield", role: "Retail Associate", department: "Retail Ops", trainer: "Morgan Ellis", started: "2026-02-04", goals: ["Operations Foundations"], courses: [
-    { id: 7, title: "Foundations in Self Governance", type: "CSG", date: "2026-02-14", status: "Confirmed" },
-    { id: 8, title: "Team Leadership", type: "HCA", date: "2026-04-22", status: "Confirmed" },
-  ] },
-  { id: 3, name: "Priya Natarajan", role: "Training Specialist", department: "Training Corps", trainer: "Juliana Kim", started: "2026-02-20", goals: ["Trainer Certification"], courses: [
-    { id: 9, title: "Trainer Foundations", type: "TTT", date: "2026-03-16", status: "Confirmed" },
-  ] },
-  { id: 4, name: "Devon Marks", role: "Team Lead", department: "Remote Team", trainer: "Morgan Ellis", started: "2026-03-01", goals: ["Remote Facilitation"], courses: [
-    { id: 10, title: "Online Academy: Core Skills", type: "OTA", date: "2026-03-19", status: "Confirmed" },
-    { id: 11, title: "Remote Team Workshop", type: "WS", date: "2026-04-09", status: "Confirmed" },
-  ] },
-  { id: 5, name: "Sofía Álvarez", role: "Community Associate", department: "Community Team", trainer: "Juliana Kim", started: "2026-03-15", goals: ["Community Leadership"], courses: [
-    { id: 12, title: "Learning Forum: Leadership", type: "LF", date: "2026-04-11", status: "Confirmed" },
-  ] },
-  { id: 6, name: "Ben Okafor", role: "Warehouse Associate", department: "Warehouse", trainer: "Morgan Ellis", started: "2026-04-03", goals: ["Safety Certification"], courses: [
-    { id: 13, title: "Warehouse Safety Workshop", type: "WS", date: "2026-04-20", status: "Confirmed" },
-  ] },
-  { id: 7, name: "Grace Lindqvist", role: "Program Coordinator", department: "Corporate", trainer: "Juliana Kim", started: "2026-04-12", goals: ["Governance Fundamentals"], courses: [
-    { id: 14, title: "Foundations in Self Governance", type: "CSG", date: "2026-05-05", status: "Confirmed" },
-  ] },
-  { id: 8, name: "Marcus Webb", role: "Retail Associate", department: "Retail Ops", trainer: "Morgan Ellis", started: "2026-05-01", goals: [], courses: [] },
-  { id: 9, name: "Alina Torres", role: "Field Coordinator", department: "Field Ops", trainer: "Juliana Kim", started: "2026-05-13", goals: ["Advanced Governance Practicum"], courses: [
-    { id: 15, title: "Governance Case Studies", type: "CSG", date: "2026-06-07", status: "Confirmed" },
-    { id: 16, title: "People Leadership", type: "HCA", date: "2026-06-28", status: "Confirmed" },
-    { id: 17, title: "Learning Forum: Leadership", type: "LF", date: "2026-07-12", status: "Confirmed" },
-  ] },
-  { id: 10, name: "Taylor Morgan", role: "Operations Coordinator", department: "Operations", trainer: "Morgan Ellis", started: "2026-06-02", goals: ["Operations Foundations"], courses: [
-    { id: 18, title: "Team Leadership", type: "HCA", date: "2026-07-05", status: "Confirmed" },
-    { id: 19, title: "Online Academy: Core Skills", type: "OTA", date: "2026-07-22", status: "Confirmed" },
-  ] },
-];
-
 function initialsFor(name: string): string {
   return name.split(/\s+/).slice(0, 2).map((part) => part[0] ?? "").join("").toUpperCase();
 }
 
-function normalizedName(name: string): string {
-  return name.trim().replace(/\s+/g, " ").toLocaleLowerCase();
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isDirectoryEmployee(value: unknown): value is DirectoryEmployee {
+  return (
+    isRecord(value) &&
+    typeof value.name === "string" &&
+    typeof value.email === "string"
+  );
 }
 
 function isSellabilityCourse(value: unknown): value is SellabilityCourseResponse {
@@ -508,9 +473,11 @@ function isSellabilityCourse(value: unknown): value is SellabilityCourseResponse
 }
 
 function PeopleView() {
-  const [people, setPeople] = useState(initialPeople);
-  const [selectedId, setSelectedId] = useState(1);
+  const [people, setPeople] = useState<PersonRecord[]>([]);
+  const [selectedId, setSelectedId] = useState("");
   const [search, setSearch] = useState("");
+  const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [category, setCategory] = useState<TrainingType | "All">("All");
   const [newCourseTitle, setNewCourseTitle] = useState("");
   const [newGoalTitle, setNewGoalTitle] = useState("");
@@ -518,58 +485,104 @@ function PeopleView() {
   const [addingGoal, setAddingGoal] = useState(false);
   const [notice, setNotice] = useState("");
   const [sellabilityCourses, setSellabilityCourses] = useState<PassportCourse[]>([]);
-  const [sellabilityPersonId, setSellabilityPersonId] = useState<number | null>(null);
+  const [sellabilityPersonId, setSellabilityPersonId] = useState("");
   const [sellabilityLoading, setSellabilityLoading] = useState(true);
   const [sellabilityError, setSellabilityError] = useState<string | null>(null);
 
-  const selectedPerson = people.find((person) => person.id === selectedId) ?? people[0];
+  const selectedPerson = people.find((person) => person.id === selectedId);
 
   useEffect(() => {
-    if (!selectedPerson) {
+    const query = search.trim();
+    if (query.length < 2) {
+      setPeople([]);
+      setSelectedId("");
+      setDirectoryError(null);
+      setDirectoryLoading(false);
       return;
     }
 
+    const controller = new AbortController();
+    setDirectoryLoading(true);
+    setDirectoryError(null);
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `/api/employees/search?q=${encodeURIComponent(query)}`,
+          { signal: controller.signal, cache: "no-store" },
+        );
+        const data: unknown = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            isRecord(data) && typeof data.error === "string"
+              ? data.error
+              : "Unable to search the employee directory.",
+          );
+        }
+        if (!Array.isArray(data) || !data.every(isDirectoryEmployee)) {
+          throw new Error("The employee directory returned invalid data.");
+        }
+
+        const employees = data.filter((employee) =>
+          employee.email.trim().toLowerCase().endsWith("@bonadmin.com"),
+        );
+        setPeople((current) =>
+          employees.map((employee) => {
+            const email = employee.email.trim().toLowerCase();
+            const existing = current.find((person) => person.id === email);
+            return existing ?? {
+              id: email,
+              name: employee.name.trim(),
+              email,
+              role: employee.role?.trim() || "Team Member",
+              department: employee.department?.trim() || "Team Member",
+              trainer: "Unassigned",
+              started: "",
+              goals: [],
+              courses: [],
+            };
+          }),
+        );
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.error("People & TIP employee search failed:", error);
+        setPeople([]);
+        setSelectedId("");
+        setDirectoryError(
+          error instanceof Error ? error.message : "Unable to search the employee directory.",
+        );
+      } finally {
+        if (!controller.signal.aborted) setDirectoryLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [search]);
+
+  useEffect(() => {
+    if (!selectedPerson) {
+      setSellabilityCourses([]);
+      setSellabilityError(null);
+      setSellabilityLoading(false);
+      return;
+    }
+
+    const person = selectedPerson;
     const controller = new AbortController();
 
     async function loadSellabilityCourses() {
       setSellabilityLoading(true);
       setSellabilityError(null);
       setSellabilityCourses([]);
-      setSellabilityPersonId(selectedPerson.id);
+      setSellabilityPersonId(person.id);
 
       try {
-        const directoryResponse = await fetch(
-          `/api/employees/search?q=${encodeURIComponent(selectedPerson.name)}`,
-          { signal: controller.signal },
-        );
-        const directoryData: unknown = await directoryResponse.json();
-        if (!directoryResponse.ok) {
-          throw new Error(
-            isRecord(directoryData) && typeof directoryData.error === "string"
-              ? directoryData.error
-              : "Unable to look up this employee in Google Workspace.",
-          );
-        }
-
-        if (!Array.isArray(directoryData)) {
-          throw new Error("The employee directory returned invalid data.");
-        }
-        const employee = directoryData.find(
-          (entry) =>
-            isRecord(entry) &&
-            typeof entry.name === "string" &&
-            typeof entry.email === "string" &&
-            normalizedName(entry.name) === normalizedName(selectedPerson.name),
-        );
-
-        if (!isRecord(employee) || typeof employee.email !== "string") {
-          throw new Error(
-            `No exact Google Workspace match was found for ${selectedPerson.name}.`,
-          );
-        }
-
         const coursesResponse = await fetch(
-          `/api/courses?email=${encodeURIComponent(employee.email)}`,
+          `/api/courses?email=${encodeURIComponent(person.email)}`,
           { signal: controller.signal },
         );
         const coursesData: unknown = await coursesResponse.json();
@@ -633,17 +646,15 @@ function PeopleView() {
 
     void loadSellabilityCourses();
     return () => controller.abort();
-  }, [selectedPerson?.id, selectedPerson?.name]);
+  }, [selectedPerson?.id, selectedPerson?.email]);
 
-  if (!selectedPerson) return null;
-
-  const selectedCourses = [
-    ...selectedPerson.courses.filter((course) => course.type !== "OTA"),
-    ...(sellabilityPersonId === selectedPerson.id ? sellabilityCourses : []),
-  ];
-  const filteredPeople = people.filter((person) =>
-    `${person.name} ${person.department}`.toLowerCase().includes(search.toLowerCase()),
-  );
+  const selectedCourses = selectedPerson
+    ? [
+        ...selectedPerson.courses.filter((course) => course.type !== "OTA"),
+        ...(sellabilityPersonId === selectedPerson.id ? sellabilityCourses : []),
+      ]
+    : [];
+  const filteredPeople = people;
   const confirmedCount = selectedCourses.filter((course) => course.status === "Confirmed").length;
   const pendingCount = selectedCourses.filter((course) => course.status === "Awaiting confirmation").length;
   const filteredCourses = selectedCourses.filter((course) => category === "All" || course.type === category);
@@ -653,24 +664,9 @@ function PeopleView() {
   }));
 
   function updateSelectedPerson(update: (person: PersonRecord) => PersonRecord) {
-    setPeople((current) => current.map((person) => person.id === selectedId ? update(person) : person));
-  }
-
-  function addPerson() {
-    const newPerson: PersonRecord = {
-      id: Date.now(),
-      name: "New person",
-      role: "Participant",
-      department: "Add department",
-      trainer: "Unassigned",
-      started: new Date().toISOString().slice(0, 10),
-      goals: [],
-      courses: [],
-    };
-    setPeople((current) => [...current, newPerson]);
-    setSelectedId(newPerson.id);
-    setSearch("");
-    setCategory("All");
+    setPeople((current) =>
+      current.map((person) => person.id === selectedId ? update(person) : person),
+    );
   }
 
   function addCourse(event: FormEvent<HTMLFormElement>) {
@@ -701,7 +697,8 @@ function PeopleView() {
   }
 
   async function copyTip() {
-    const tip = `${selectedPerson.name}\n${selectedPerson.department}\nStarted ${formatDate(selectedPerson.started)} · Trainer: ${selectedPerson.trainer}\n${confirmedCount} trainings confirmed · ${pendingCount} awaiting confirmation\nTraining goals: ${selectedPerson.goals.join(", ") || "None"}`;
+    if (!selectedPerson) return;
+    const tip = `${selectedPerson.name}\n${selectedPerson.email}\n${selectedPerson.role} · ${selectedPerson.department}\n${confirmedCount} trainings confirmed · ${pendingCount} awaiting confirmation\nTraining goals: ${selectedPerson.goals.join(", ") || "None"}`;
     try {
       await navigator.clipboard.writeText(tip);
       setNotice("TIP summary copied to clipboard.");
@@ -716,23 +713,44 @@ function PeopleView() {
       <aside className="rounded-[22px] border border-[#d7e1dd] bg-[#f8fbf9] p-4 sm:p-5">
         <div className="mb-3 flex items-center justify-between gap-2">
           <h1 className="text-xl font-semibold tracking-[-0.04em] text-[#172523]">Roster</h1>
-          <span className="text-right text-[10px] text-[#71807c]">{people.length} people <span className="ml-1 rounded-full bg-[#eaf5f1] px-1.5 py-0.5 font-semibold text-[#147e78]">Preview</span></span>
+          <span className="text-right text-[10px] text-[#71807c]">
+            {people.length} {people.length === 1 ? "employee" : "employees"}
+          </span>
         </div>
         <label className="block">
           <span className="sr-only">Search people by name</span>
           <input
             type="search"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPeople([]);
+              setSelectedId("");
+              setCategory("All");
+              setNotice("");
+            }}
             placeholder="Search by name..."
             className="h-10 w-full rounded-[11px] border border-[#cfdad6] bg-white px-3 text-sm outline-none focus:border-[#1ca5a0] focus:ring-2 focus:ring-[#1ca5a0]/15"
           />
         </label>
         <div className="mt-3 max-h-[450px] space-y-1 overflow-y-auto pr-1">
+          {directoryLoading && (
+            <p role="status" className="px-2 py-6 text-center text-sm text-[#71807c]">
+              Searching the Google Workspace directory...
+            </p>
+          )}
+          {directoryError && (
+            <p role="alert" className="px-2 py-6 text-center text-sm text-[#a94856]">
+              {directoryError}
+            </p>
+          )}
+          {!directoryLoading && !directoryError && search.trim().length < 2 && (
+            <p className="px-2 py-6 text-center text-sm text-[#71807c]">
+              Enter at least 2 characters to search employees.
+            </p>
+          )}
           {filteredPeople.map((person, index) => {
             const selected = person.id === selectedId;
-            const personCourses = selected ? selectedCourses : person.courses;
-            const confirmed = personCourses.filter((course) => course.status === "Confirmed").length;
             return (
               <button
                 key={person.id}
@@ -751,26 +769,20 @@ function PeopleView() {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs font-semibold text-[#263733]">{person.name}</span>
-                  <span className="block truncate text-[11px] text-[#7b8985]">{person.department}</span>
-                </span>
-                <span className="shrink-0 text-[11px] text-[#71807c]">
-                  {personCourses.length > 0 && <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#1ca5a0]" />}
-                  {confirmed}/{personCourses.length}
+                  <span className="block truncate text-[11px] text-[#7b8985]">{person.email}</span>
                 </span>
               </button>
             );
           })}
-          {filteredPeople.length === 0 && <p className="px-2 py-6 text-center text-sm text-[#71807c]">No people found.</p>}
+          {!directoryLoading && !directoryError && search.trim().length >= 2 && filteredPeople.length === 0 && (
+            <p className="px-2 py-6 text-center text-sm text-[#71807c]">No employees found.</p>
+          )}
         </div>
-        <button
-          onClick={addPerson}
-          className="mt-3 h-10 w-full rounded-[11px] bg-[#1aa6a1] text-sm font-semibold text-white transition-colors hover:bg-[#148d88]"
-        >
-          + Add person
-        </button>
       </aside>
 
       <div className="min-w-0 space-y-4">
+        {selectedPerson ? (
+          <>
         <section className="rounded-[22px] border border-[#d7e1dd] bg-[#f8fbf9] p-5 sm:p-7">
           <div className="flex flex-wrap items-start gap-4">
             <div className="flex min-w-0 flex-1 items-start gap-3">
@@ -779,8 +791,8 @@ function PeopleView() {
               </span>
               <div className="min-w-0">
                 <h2 className="truncate text-2xl font-semibold tracking-[-0.05em] text-[#172523] sm:text-3xl">{selectedPerson.name}</h2>
-                <p className="mt-1 text-sm text-[#61726e]">{selectedPerson.role} · {selectedPerson.department} · Center for Self Governance</p>
-                <p className="mt-1 font-mono text-[11px] text-[#7b8985]">Started {selectedPerson.started} · Trainer: {selectedPerson.trainer}</p>
+                <p className="mt-1 text-sm text-[#61726e]">{selectedPerson.role} · {selectedPerson.department}</p>
+                <p className="mt-1 font-mono text-[11px] text-[#7b8985]">{selectedPerson.email}</p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1003,6 +1015,15 @@ function PeopleView() {
             </div>
           </section>
         </div>
+          </>
+        ) : (
+          <section className="rounded-[22px] border border-[#d7e1dd] bg-[#f8fbf9] px-6 py-16 text-center">
+            <h2 className="text-xl font-semibold text-[#172523]">Select an employee</h2>
+            <p className="mt-2 text-sm text-[#71807c]">
+              Search the Google Workspace directory and select an employee to view their passport.
+            </p>
+          </section>
+        )}
       </div>
     </div>
   );
