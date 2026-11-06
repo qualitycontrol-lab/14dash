@@ -389,13 +389,16 @@ function TrainingForm({ onCreate }: { onCreate: (training: Omit<Training, "id">)
   );
 }
 
-type StampStatus = "Confirmed" | "Awaiting confirmation";
+type StampStatus = "Confirmed" | "Awaiting confirmation" | "In Progress" | "Not Started";
 type PassportCourse = {
-  id: number;
+  id: number | string;
   title: string;
   type: TrainingType;
   date: string;
   status: StampStatus;
+  progress?: number;
+  courseUrl?: string;
+  source?: "sellability";
 };
 type PersonRecord = {
   id: number;
@@ -406,6 +409,15 @@ type PersonRecord = {
   started: string;
   goals: string[];
   courses: PassportCourse[];
+};
+type SellabilityCourseResponse = {
+  id: string | number;
+  title: string;
+  status: "Completed" | "In Progress" | "Not Started";
+  progress: number;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  url?: string;
 };
 
 const categoryStyles: Record<TrainingType, { label: string; tone: string; border: string }> = {
@@ -468,6 +480,33 @@ function initialsFor(name: string): string {
   return name.split(/\s+/).slice(0, 2).map((part) => part[0] ?? "").join("").toUpperCase();
 }
 
+function normalizedName(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isSellabilityCourse(value: unknown): value is SellabilityCourseResponse {
+  if (!isRecord(value)) return false;
+  return (
+    (typeof value.id === "string" || typeof value.id === "number") &&
+    typeof value.title === "string" &&
+    (value.status === "Completed" ||
+      value.status === "In Progress" ||
+      value.status === "Not Started") &&
+    typeof value.progress === "number" &&
+    (value.startedAt === undefined ||
+      value.startedAt === null ||
+      typeof value.startedAt === "string") &&
+    (value.completedAt === undefined ||
+      value.completedAt === null ||
+      typeof value.completedAt === "string") &&
+    (value.url === undefined || typeof value.url === "string")
+  );
+}
+
 function PeopleView() {
   const [people, setPeople] = useState(initialPeople);
   const [selectedId, setSelectedId] = useState(1);
@@ -478,19 +517,139 @@ function PeopleView() {
   const [addingCourse, setAddingCourse] = useState(false);
   const [addingGoal, setAddingGoal] = useState(false);
   const [notice, setNotice] = useState("");
+  const [sellabilityCourses, setSellabilityCourses] = useState<PassportCourse[]>([]);
+  const [sellabilityPersonId, setSellabilityPersonId] = useState<number | null>(null);
+  const [sellabilityLoading, setSellabilityLoading] = useState(true);
+  const [sellabilityError, setSellabilityError] = useState<string | null>(null);
 
   const selectedPerson = people.find((person) => person.id === selectedId) ?? people[0];
+
+  useEffect(() => {
+    if (!selectedPerson) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadSellabilityCourses() {
+      setSellabilityLoading(true);
+      setSellabilityError(null);
+      setSellabilityCourses([]);
+      setSellabilityPersonId(selectedPerson.id);
+
+      try {
+        const directoryResponse = await fetch(
+          `/api/employees/search?q=${encodeURIComponent(selectedPerson.name)}`,
+          { signal: controller.signal },
+        );
+        const directoryData: unknown = await directoryResponse.json();
+        if (!directoryResponse.ok) {
+          throw new Error(
+            isRecord(directoryData) && typeof directoryData.error === "string"
+              ? directoryData.error
+              : "Unable to look up this employee in Google Workspace.",
+          );
+        }
+
+        if (!Array.isArray(directoryData)) {
+          throw new Error("The employee directory returned invalid data.");
+        }
+        const employee = directoryData.find(
+          (entry) =>
+            isRecord(entry) &&
+            typeof entry.name === "string" &&
+            typeof entry.email === "string" &&
+            normalizedName(entry.name) === normalizedName(selectedPerson.name),
+        );
+
+        if (!isRecord(employee) || typeof employee.email !== "string") {
+          throw new Error(
+            `No exact Google Workspace match was found for ${selectedPerson.name}.`,
+          );
+        }
+
+        const coursesResponse = await fetch(
+          `/api/courses?email=${encodeURIComponent(employee.email)}`,
+          { signal: controller.signal },
+        );
+        const coursesData: unknown = await coursesResponse.json();
+        if (!coursesResponse.ok) {
+          throw new Error(
+            isRecord(coursesData) && typeof coursesData.error === "string"
+              ? coursesData.error
+              : "Unable to load this employee's Sellability courses.",
+          );
+        }
+        if (
+          !isRecord(coursesData) ||
+          !Array.isArray(coursesData.courses) ||
+          !coursesData.courses.every(isSellabilityCourse)
+        ) {
+          throw new Error("Sellability returned an invalid course list.");
+        }
+
+        const validCourses = coursesData.courses.filter(isSellabilityCourse);
+        setSellabilityCourses(
+          validCourses.map((course) => {
+            const completedAt =
+              typeof course.completedAt === "string" ? course.completedAt : null;
+            const startedAt =
+              typeof course.startedAt === "string" ? course.startedAt : null;
+            const status: StampStatus =
+              course.status === "Completed"
+                ? "Confirmed"
+                : course.status === "In Progress"
+                  ? "In Progress"
+                  : "Not Started";
+
+            return {
+              id: course.id,
+              title: course.title,
+              type: "OTA",
+              date: (completedAt ?? startedAt ?? "").slice(0, 10),
+              status,
+              progress: course.progress,
+              courseUrl: course.url,
+              source: "sellability",
+            };
+          }),
+        );
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        console.error("Failed to load employee Sellability courses:", error);
+        setSellabilityError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load this employee's Sellability courses.",
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setSellabilityLoading(false);
+        }
+      }
+    }
+
+    void loadSellabilityCourses();
+    return () => controller.abort();
+  }, [selectedPerson?.id, selectedPerson?.name]);
+
   if (!selectedPerson) return null;
 
+  const selectedCourses = [
+    ...selectedPerson.courses.filter((course) => course.type !== "OTA"),
+    ...(sellabilityPersonId === selectedPerson.id ? sellabilityCourses : []),
+  ];
   const filteredPeople = people.filter((person) =>
     `${person.name} ${person.department}`.toLowerCase().includes(search.toLowerCase()),
   );
-  const confirmedCount = selectedPerson.courses.filter((course) => course.status === "Confirmed").length;
-  const pendingCount = selectedPerson.courses.length - confirmedCount;
-  const filteredCourses = selectedPerson.courses.filter((course) => category === "All" || course.type === category);
+  const confirmedCount = selectedCourses.filter((course) => course.status === "Confirmed").length;
+  const pendingCount = selectedCourses.filter((course) => course.status === "Awaiting confirmation").length;
+  const filteredCourses = selectedCourses.filter((course) => category === "All" || course.type === category);
   const categoryCounts = trainingTypes.map(({ code }) => ({
     code,
-    count: selectedPerson.courses.filter((course) => course.type === code).length,
+    count: selectedCourses.filter((course) => course.type === code).length,
   }));
 
   function updateSelectedPerson(update: (person: PersonRecord) => PersonRecord) {
@@ -571,8 +730,9 @@ function PeopleView() {
         </label>
         <div className="mt-3 max-h-[450px] space-y-1 overflow-y-auto pr-1">
           {filteredPeople.map((person, index) => {
-            const confirmed = person.courses.filter((course) => course.status === "Confirmed").length;
             const selected = person.id === selectedId;
+            const personCourses = selected ? selectedCourses : person.courses;
+            const confirmed = personCourses.filter((course) => course.status === "Confirmed").length;
             return (
               <button
                 key={person.id}
@@ -594,8 +754,8 @@ function PeopleView() {
                   <span className="block truncate text-[11px] text-[#7b8985]">{person.department}</span>
                 </span>
                 <span className="shrink-0 text-[11px] text-[#71807c]">
-                  {person.courses.length > 0 && <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#1ca5a0]" />}
-                  {confirmed}/{person.courses.length}
+                  {personCourses.length > 0 && <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#1ca5a0]" />}
+                  {confirmed}/{personCourses.length}
                 </span>
               </button>
             );
@@ -658,7 +818,7 @@ function PeopleView() {
             aria-pressed={category === "All"}
             className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-semibold ${category === "All" ? "border-[#1a7771] bg-[#1a7771] text-white" : "border-[#b8c8c2] bg-white text-[#52635f]"}`}
           >
-            All <span className="ml-1 opacity-70">{selectedPerson.courses.length}</span>
+            All <span className="ml-1 opacity-70">{selectedCourses.length}</span>
           </button>
           {categoryCounts.map(({ code, count }) => (
             <button
@@ -701,6 +861,29 @@ function PeopleView() {
                 <button className="rounded-[9px] bg-[#1aa6a1] px-3 text-xs font-semibold text-white">Add</button>
               </form>
             )}
+            {(category === "All" || category === "OTA") &&
+              sellabilityPersonId === selectedPerson.id &&
+              sellabilityLoading && (
+              <p role="status" className="mb-3 rounded-[12px] bg-white px-4 py-3 text-xs text-[#61726e]">
+                Loading Online Training Academy enrollments...
+              </p>
+            )}
+            {(category === "All" || category === "OTA") &&
+              sellabilityPersonId === selectedPerson.id &&
+              sellabilityError && (
+              <p role="alert" className="mb-3 rounded-[12px] border border-[#edc9c9] bg-[#fff4f3] px-4 py-3 text-xs text-[#a94856]">
+                {sellabilityError}
+              </p>
+            )}
+            {(category === "OTA") &&
+              sellabilityPersonId === selectedPerson.id &&
+              !sellabilityLoading &&
+              !sellabilityError &&
+              sellabilityCourses.length === 0 && (
+                <p className="mb-3 rounded-[12px] bg-white px-4 py-3 text-xs text-[#61726e]">
+                  No Online Training Academy enrollments found for this employee.
+                </p>
+              )}
             {trainingTypes.filter(({ code }) => category === "All" || category === code).map(({ code }) => {
               const courses = filteredCourses.filter((course) => course.type === code);
               if (!courses.length) return null;
@@ -712,33 +895,54 @@ function PeopleView() {
                     {courses.map((course) => (
                       <article key={course.id} className="flex min-w-0 flex-col items-center text-center">
                         <div className={`flex h-12 w-12 items-center justify-center rounded-full border-2 ${course.status === "Confirmed" ? style.border : `border-dashed ${style.border}`} ${style.tone} text-xl`}>
-                          {course.status === "Confirmed" ? "✓" : "?"}
+                          {course.status === "Confirmed"
+                            ? "✓"
+                            : course.status === "In Progress"
+                            ? `${course.progress ?? 50}%`
+                            : "·"}
                         </div>
                         <h3 className="mt-2 line-clamp-2 min-h-8 text-[11px] font-medium leading-4 text-[#283a36]">{course.title}</h3>
-                        <p className="mt-1 text-[10px] text-[#71807c]">{course.date}</p>
+                        <p className="mt-1 text-[10px] text-[#71807c]">
+                          {course.date ? formatDate(course.date) : "—"}
+                        </p>
                         <p className="mt-0.5 min-h-7 text-[9px] font-medium uppercase leading-3 tracking-wide text-[#71807c]">
-                          {course.status}
+                          {course.status === "Confirmed" ? "Confirmed" : course.status}
                         </p>
                         <div className="mt-1 flex flex-wrap justify-center gap-1">
-                          <button
-                            onClick={() => updateSelectedPerson((person) => ({
-                              ...person,
-                              courses: person.courses.filter((item) => item.id !== course.id),
-                            }))}
-                            className="rounded-[7px] border border-[#d8e1de] bg-white px-2 py-1 text-[9px] text-[#61726e] hover:bg-[#eff4f1]"
-                          >
-                            Revoke
-                          </button>
-                          {course.status === "Awaiting confirmation" && (
+                          {course.source === "sellability" ? (
+                            course.courseUrl && (
+                            <a
+                              href={course.courseUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="rounded-[7px] border border-[#d8e1de] bg-white px-2 py-1 text-[9px] text-[#147e78] hover:bg-[#eff4f1]"
+                            >
+                              Open course
+                            </a>
+                            )
+                          ) : (
+                            <>
                             <button
                               onClick={() => updateSelectedPerson((person) => ({
                                 ...person,
-                                courses: person.courses.map((item) => item.id === course.id ? { ...item, status: "Confirmed" } : item),
+                                courses: person.courses.filter((item) => item.id !== course.id),
                               }))}
-                              className="rounded-[7px] bg-[#1a7771] px-2 py-1 text-[9px] font-semibold text-white hover:bg-[#12635e]"
+                              className="rounded-[7px] border border-[#d8e1de] bg-white px-2 py-1 text-[9px] text-[#61726e] hover:bg-[#eff4f1]"
                             >
-                              Confirm
+                              Revoke
                             </button>
+                            {course.status === "Awaiting confirmation" && (
+                              <button
+                                onClick={() => updateSelectedPerson((person) => ({
+                                  ...person,
+                                  courses: person.courses.map((item) => item.id === course.id ? { ...item, status: "Confirmed" } : item),
+                                }))}
+                                className="rounded-[7px] bg-[#1a7771] px-2 py-1 text-[9px] font-semibold text-white hover:bg-[#12635e]"
+                              >
+                                Confirm
+                              </button>
+                            )}
+                            </>
                           )}
                         </div>
                       </article>

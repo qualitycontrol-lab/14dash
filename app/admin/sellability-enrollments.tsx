@@ -104,13 +104,17 @@ export default function SellabilityEnrollments() {
   const [search, setSearch] = useState("");
   const [courseFilter, setCourseFilter] = useState("All Courses");
   const [statusFilter, setStatusFilter] = useState<(typeof statuses)[number]>("All");
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
 
     async function loadEnrollments() {
+      setLoading(true);
+      setError(null);
       try {
-        const response = await fetch("/api/admin/enrollments", {
+        const response = await fetch(`/api/admin/enrollments?page=${page}`, {
           signal: controller.signal,
         });
         const data: unknown = await response.json();
@@ -126,12 +130,22 @@ export default function SellabilityEnrollments() {
           throw new Error(message);
         }
 
-        if (!Array.isArray(data) || !data.every(isEnrollment)) {
+        if (
+          typeof data !== "object" ||
+          data === null ||
+          !("enrollments" in data) ||
+          !Array.isArray(data.enrollments) ||
+          !data.enrollments.every(isEnrollment) ||
+          !("page" in data) ||
+          data.page !== page ||
+          !("hasMore" in data) ||
+          typeof data.hasMore !== "boolean"
+        ) {
           throw new Error("The Sellability enrollment response was invalid.");
         }
 
-        setEnrollments(data);
-        setError(null);
+        setEnrollments(data.enrollments);
+        setHasMore(data.hasMore);
       } catch (loadError) {
         if (controller.signal.aborted) {
           return;
@@ -151,7 +165,7 @@ export default function SellabilityEnrollments() {
 
     void loadEnrollments();
     return () => controller.abort();
-  }, []);
+  }, [page]);
 
   const courses = useMemo(
     () => [...new Set(enrollments.map((enrollment) => enrollment.courseTitle))].sort(),
@@ -221,10 +235,10 @@ export default function SellabilityEnrollments() {
       )}
 
       <section aria-label="Enrollment summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Total Students" value={totalStudents} note="With listed enrollments" />
-        <Metric label="Active Enrollments" value={activeEnrollments} note="Not yet completed" />
-        <Metric label="Completed Courses" value={completedEnrollments} note="Completed enrollments" />
-        <Metric label="Overall Completion Rate" value={`${completionRate}%`} note="Completed enrollments" />
+        <Metric label="Students on Page" value={totalStudents} note="In this page of enrollments" />
+        <Metric label="Active Enrollments" value={activeEnrollments} note="Not yet completed on this page" />
+        <Metric label="Completed Courses" value={completedEnrollments} note="Completed on this page" />
+        <Metric label="Page Completion Rate" value={`${completionRate}%`} note="Completed enrollments on this page" />
       </section>
 
       <section className="flex flex-col gap-3 rounded-2xl border border-[#d7e1dd] bg-[#f8fbf9] p-4 sm:flex-row">
@@ -234,7 +248,7 @@ export default function SellabilityEnrollments() {
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search student name or email"
+            placeholder="Search this page by name or email"
             className="h-11 w-full rounded-xl border border-[#cfdad6] bg-white px-4 text-sm text-[#344743] outline-none focus:border-[#1b8076] focus:ring-2 focus:ring-[#1b8076]/15"
           />
         </label>
@@ -348,9 +362,30 @@ export default function SellabilityEnrollments() {
           </div>
         )}
         {!loading && (
-          <p className="border-t border-[#e5ebe8] px-5 py-3 text-xs text-[#71807c]">
-            Showing {filteredEnrollments.length} of {enrollments.length} enrollments
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e5ebe8] px-5 py-3">
+            <p className="text-xs text-[#71807c]">
+              Showing {filteredEnrollments.length} of {enrollments.length} enrollments on page {page}
+            </p>
+            <nav aria-label="Enrollment pages" className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={page === 1 || loading}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                className="rounded-full border border-[#b8d5ce] px-4 py-2 text-xs font-semibold text-[#1b8076] hover:bg-[#eaf5f1] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <span className="px-2 text-xs font-medium text-[#536663]">Page {page}</span>
+              <button
+                type="button"
+                disabled={!hasMore || loading}
+                onClick={() => setPage((current) => current + 1)}
+                className="rounded-full border border-[#b8d5ce] px-4 py-2 text-xs font-semibold text-[#1b8076] hover:bg-[#eaf5f1] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </nav>
+          </div>
         )}
       </section>
     </div>

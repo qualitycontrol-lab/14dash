@@ -52,11 +52,22 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-export async function GET() {
+const PAGE_SIZE = 100;
+
+export async function GET(request: Request) {
   const session = await getServerSession();
 
   if (!isAdminEmail(session?.user?.email)) {
     return jsonResponse({ error: "Unauthorized." }, 401);
+  }
+
+  const requestedPage = Number(new URL(request.url).searchParams.get("page") ?? "1");
+  if (!Number.isSafeInteger(requestedPage) || requestedPage < 1) {
+    return jsonResponse({ error: "Page must be a positive integer." }, 400);
+  }
+  const offset = (requestedPage - 1) * PAGE_SIZE;
+  if (!Number.isSafeInteger(offset)) {
+    return jsonResponse({ error: "Page is out of range." }, 400);
   }
 
   const apiKey = process.env.SELLABILITY_API_KEY;
@@ -69,35 +80,35 @@ export async function GET() {
     Authorization: `Bearer ${apiKey}`,
     Accept: "application/json",
   };
-  const fetchOptions = { headers, next: { revalidate: 60 } };
 
   try {
-    const [coursesRes, studentsRes, enrollmentsRes] = await Promise.all([
-      fetch(`${BASE_URL}/courses?limit=100`, fetchOptions),
-      fetch(`${BASE_URL}/students?limit=100`, fetchOptions),
-      fetch(`${BASE_URL}/enrollments?limit=100`, fetchOptions),
+    const [coursesRes, enrollmentsRes] = await Promise.all([
+      fetch(`${BASE_URL}/courses?limit=100`, {
+        headers,
+        next: { revalidate: 86400 },
+      }),
+      fetch(
+        `${BASE_URL}/enrollments?limit=${PAGE_SIZE}&offset=${offset}`,
+        { headers, next: { revalidate: 60 } },
+      ),
     ]);
 
-    if (!coursesRes.ok || !studentsRes.ok || !enrollmentsRes.ok) {
+    if (!coursesRes.ok || !enrollmentsRes.ok) {
       console.error("Sellability enrollment lookup failed:", {
         coursesStatus: coursesRes.status,
-        studentsStatus: studentsRes.status,
         enrollmentsStatus: enrollmentsRes.status,
       });
       return jsonResponse({ error: "Failed to connect to Sellability." }, 502);
     }
 
-    const [coursesData, studentsData, enrollmentsData] = await Promise.all([
+    const [coursesData, enrollmentsData] = await Promise.all([
       coursesRes.json() as Promise<unknown>,
-      studentsRes.json() as Promise<unknown>,
       enrollmentsRes.json() as Promise<unknown>,
     ]);
 
     if (
       !Array.isArray(coursesData) ||
       !coursesData.every(isSellabilityRecord) ||
-      !Array.isArray(studentsData) ||
-      !studentsData.every(isSellabilityRecord) ||
       !Array.isArray(enrollmentsData) ||
       !enrollmentsData.every(isSellabilityRecord)
     ) {
@@ -105,12 +116,94 @@ export async function GET() {
       return jsonResponse({ error: "Sellability returned invalid data." }, 502);
     }
 
-    const studentsById = new Map(
-      studentsData.map((student) => [idKey(student.id), student]),
+    const studentsById = new Map<string, Record<string, unknown>>();
+    for (const enrollment of enrollmentsData) {
+      if (isRecord(enrollment.student)) {
+        const studentId = idKey(enrollment.student.id);
+        if (studentId) {
+          studentsById.set(studentId, enrollment.student);
+        }
+      }
+    }
+
+    const unresolvedStudentIds = [
+      ...new Set(
+        enrollmentsData
+          .filter((enrollment) => {
+            const studentId = idKey(enrollment.student_id);
+            return studentId !== null && !studentsById.has(studentId);
+          })
+          .map((enrollment) => idKey(enrollment.student_id))
+          .filter((studentId): studentId is string => studentId !== null),
+      ),
+    ];
+    const studentDetails = await Promise.all(
+      unresolvedStudentIds.map(async (studentId) => {
+        const response = await fetch(
+          `${BASE_URL}/students/${encodeURIComponent(studentId)}`,
+          { headers, next: { revalidate: 3600 } },
+        );
+        if (!response.ok) {
+          console.warn("Sellability student detail lookup failed:", {
+            studentId,
+            status: response.status,
+          });
+          return null;
+        }
+        const data: unknown = await response.json();
+        if (!isSellabilityRecord(data)) {
+          console.warn("Sellability returned invalid student details:", studentId);
+          return null;
+        }
+        return data;
+      }),
     );
-    const coursesById = new Map(
-      coursesData.map((course) => [idKey(course.id), course]),
+    for (const student of studentDetails) {
+      if (student) {
+        const studentId = idKey(student.id);
+        if (studentId) studentsById.set(studentId, student);
+      }
+    }
+
+    const coursesById = new Map<string, SellabilityRecord>();
+    for (const course of coursesData) {
+      const courseId = idKey(course.id);
+      if (courseId) coursesById.set(courseId, course);
+    }
+    const unresolvedCourseIds = [
+      ...new Set(
+        enrollmentsData
+          .map((enrollment) => idKey(enrollment.course_id))
+          .filter((courseId): courseId is string => courseId !== null && !coursesById.has(courseId)),
+      ),
+    ];
+    const courseDetails = await Promise.all(
+      unresolvedCourseIds.map(async (courseId) => {
+        const response = await fetch(
+          `${BASE_URL}/courses/${encodeURIComponent(courseId)}`,
+          { headers, next: { revalidate: 86400 } },
+        );
+        if (!response.ok) {
+          console.warn("Sellability course detail lookup failed:", {
+            courseId,
+            status: response.status,
+          });
+          return null;
+        }
+        const data: unknown = await response.json();
+        if (!isSellabilityRecord(data)) {
+          console.warn("Sellability returned invalid course details:", courseId);
+          return null;
+        }
+        return data;
+      }),
     );
+    for (const course of courseDetails) {
+      if (course) {
+        const courseId = idKey(course.id);
+        if (courseId) coursesById.set(courseId, course);
+      }
+    }
 
     let unmatchedStudentCount = 0;
     let unmatchedCourseCount = 0;
@@ -160,12 +253,17 @@ export async function GET() {
         enrollmentCount: enrollmentsData.length,
         unmatchedStudentCount,
         unmatchedCourseCount,
-        studentCount: studentsData.length,
+        studentCount: studentsById.size,
         courseCount: coursesData.length,
       });
     }
 
-    return jsonResponse(enrollments);
+    return jsonResponse({
+      enrollments,
+      page: requestedPage,
+      pageSize: PAGE_SIZE,
+      hasMore: enrollmentsData.length === PAGE_SIZE,
+    });
   } catch (error) {
     console.error("Sellability enrollment lookup failed:", error);
     return jsonResponse({ error: "Unable to load Sellability enrollments." }, 502);
