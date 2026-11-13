@@ -278,7 +278,15 @@ export async function ensureHiddenColumns(
 
   const result = new Map<string, number>();
   const toAdd: Array<{ name: string; index: number }> = [];
-  let nextIndex = Math.max(headers.length, startColumnIndex);
+  const usedColumnCount = values.reduce(
+    (max, row) => Math.max(max, row.length),
+    0,
+  );
+  let nextIndex = Math.max(
+    headers.length,
+    startColumnIndex,
+    usedColumnCount,
+  );
   for (const headerName of headerNames) {
     const existingIndex = headers.findIndex(
       (header) => normalizeHeader(header) === normalizeHeader(headerName),

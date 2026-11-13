@@ -100,18 +100,119 @@ function formatMonthYear(value: string): string {
   return `${month}/${String(year).slice(-2)}`;
 }
 
+function parseCsgCompletionDates(value: string): Record<string, string> {
+  if (!value || /^(true|false)$/i.test(value)) return {};
+
+  const parsed: unknown = JSON.parse(value);
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    Array.isArray(parsed) ||
+    Object.values(parsed).some((item) => typeof item !== "string")
+  ) {
+    throw new GoogleSheetsDataError("The CSG completion date metadata is invalid.");
+  }
+  return parsed as Record<string, string>;
+}
+
+async function ensureCsgMetadataColumns(
+  spreadsheetId: string,
+  tab: string,
+): Promise<Map<string, number>> {
+  const headerNames = ["Employee Email", "Completion Dates ISO JSON"];
+  const initialColumns = await ensureHiddenColumns(spreadsheetId, tab, 2, headerNames);
+  const dateColumn = initialColumns.get("Completion Dates ISO JSON");
+  if (dateColumn === undefined) {
+    throw new GoogleSheetsDataError(`The "${tab}" tab has no completion date metadata column.`);
+  }
+
+  const values = await readSheetValues(spreadsheetId, `${quoteSheetName(tab)}!A:ZZ`);
+  const preservedDates = values.flatMap((row, rowIndex) => {
+    if (rowIndex < 2) return [];
+    const value = row[dateColumn] ?? "";
+    if (!value || /^(true|false)$/i.test(value)) return [];
+    try {
+      parseCsgCompletionDates(value);
+      return [{ row: rowIndex + 1, value }];
+    } catch {
+      return [{ row: rowIndex + 1, value: "" }];
+    }
+  });
+  const hasCollision = values.slice(2).some((row) => {
+    const value = row[dateColumn] ?? "";
+    if (!value || /^(true|false)$/i.test(value)) return Boolean(value);
+    try {
+      parseCsgCompletionDates(value);
+      return false;
+    } catch {
+      return true;
+    }
+  });
+  if (!hasCollision) return initialColumns;
+
+  const sheets = getGoogleSheetsClient();
+  const metadata = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets(properties(sheetId,title))",
+  });
+  const sheetId = metadata.data.sheets
+    ?.map((sheet) => sheet.properties)
+    .find((properties) => properties?.title === tab)?.sheetId;
+  if (sheetId === undefined) {
+    throw new GoogleSheetsDataError(`The "${tab}" tab was not found.`);
+  }
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${quoteSheetName(tab)}!${columnLetter(dateColumn)}2`,
+    valueInputOption: "RAW",
+    requestBody: { values: [[""]] },
+  });
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{
+        updateDimensionProperties: {
+          range: {
+            sheetId,
+            dimension: "COLUMNS",
+            startIndex: dateColumn,
+            endIndex: dateColumn + 1,
+          },
+          properties: { hiddenByUser: false },
+          fields: "hiddenByUser",
+        },
+      }],
+    },
+  });
+
+  const columns = await ensureHiddenColumns(spreadsheetId, tab, 2, headerNames);
+  const relocatedDateColumn = columns.get("Completion Dates ISO JSON");
+  if (relocatedDateColumn === undefined) {
+    throw new GoogleSheetsDataError(`The "${tab}" tab has no completion date metadata column.`);
+  }
+  const updates = preservedDates
+    .filter(({ value }) => value !== "")
+    .map(({ row, value }) => ({
+      range: `${quoteSheetName(tab)}!${columnLetter(relocatedDateColumn)}${row}`,
+      values: [[value]],
+    }));
+  if (updates.length) {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: { valueInputOption: "RAW", data: updates },
+    });
+  }
+  return columns;
+}
+
 async function findCsgCourses(name: string): Promise<PassportCourse[]> {
   const spreadsheetId = getSpreadsheetId("csgTracker");
   const normalizedName = normalizeName(name);
   const courses: PassportCourse[] = [];
 
   for (const tab of CSG_TABS) {
-    const metadataColumns = await ensureHiddenColumns(
-      spreadsheetId,
-      tab,
-      2,
-      ["Employee Email", "Completion Dates ISO JSON"],
-    );
+    const metadataColumns = await ensureCsgMetadataColumns(spreadsheetId, tab);
     const values = await readSheetValues(spreadsheetId, `${quoteSheetName(tab)}!A:ZZ`);
     const headers = values[1] ?? [];
     const exactDateColumn = metadataColumns.get("Completion Dates ISO JSON");
@@ -135,29 +236,15 @@ async function findCsgCourses(name: string): Promise<PassportCourse[]> {
 
       for (let checkboxColumn = 3; checkboxColumn + 1 < headers.length; checkboxColumn += 2) {
         const title = headers[checkboxColumn]?.trim();
-        if (!title || normalizeName(title) === "date") continue;
-        const completed = isChecked(row[checkboxColumn]);
-        let exactDates: Record<string, string> = {};
-        const storedDates = row[exactDateColumn] ?? "";
-        if (storedDates) {
-          try {
-            const parsed: unknown = JSON.parse(storedDates);
-            if (
-              typeof parsed !== "object" ||
-              parsed === null ||
-              Object.values(parsed).some((value) => typeof value !== "string")
-            ) {
-              throw new Error("invalid completion date metadata");
-            }
-            exactDates = parsed as Record<string, string>;
-          } catch (error) {
-            throw new GoogleSheetsDataError(
-              `The completion date metadata for "${title}" on "${tab}" is invalid: ${
-                error instanceof Error ? error.message : "invalid JSON"
-              }`,
-            );
-          }
+        if (
+          !title ||
+          ["date", "employee email", "completion dates iso json"].includes(normalizeName(title))
+        ) {
+          continue;
         }
+        const completed = isChecked(row[checkboxColumn]);
+        const storedDates = row[exactDateColumn] ?? "";
+        const exactDates = parseCsgCompletionDates(storedDates);
         const completionDate = exactDates[String(checkboxColumn)] || row[checkboxColumn + 1] || "";
         courses.push({
           id: `csg|${tab}|${rowIndex + 1}|${checkboxColumn}|${encodeURIComponent(title)}`,
@@ -224,12 +311,7 @@ async function updateCsgCourse(
     throw new GoogleSheetsDataError("Unknown CSG tracker tab.");
   }
   const spreadsheetId = getSpreadsheetId("csgTracker");
-  const metadataColumns = await ensureHiddenColumns(
-    spreadsheetId,
-    tab,
-    2,
-    ["Employee Email", "Completion Dates ISO JSON"],
-  );
+  const metadataColumns = await ensureCsgMetadataColumns(spreadsheetId, tab);
   const values = await readSheetValues(spreadsheetId, `${quoteSheetName(tab)}!A:ZZ`);
   const row = values[rowNumber - 1];
   if (
@@ -256,17 +338,7 @@ async function updateCsgCourse(
   }
   const datesJson = row[exactDateColumn] ?? "";
   let exactDates: Record<string, string> = {};
-  if (datesJson) {
-    const parsed: unknown = JSON.parse(datesJson);
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      Object.values(parsed).some((value) => typeof value !== "string")
-    ) {
-      throw new GoogleSheetsDataError("The CSG completion date metadata is invalid.");
-    }
-    exactDates = parsed as Record<string, string>;
-  }
+  exactDates = parseCsgCompletionDates(datesJson);
   if (completed) exactDates[String(column)] = date;
   else delete exactDates[String(column)];
 
@@ -462,12 +534,7 @@ async function backfillEmployeeEmail(name: string, email: string): Promise<void>
 
     const csgId = getSpreadsheetId("csgTracker");
     for (const tab of CSG_TABS) {
-      const columns = await ensureHiddenColumns(
-        csgId,
-        tab,
-        2,
-        ["Employee Email", "Completion Dates ISO JSON"],
-      );
+      const columns = await ensureCsgMetadataColumns(csgId, tab);
       const emailColumn = columns.get("Employee Email");
       if (emailColumn === undefined) {
         throw new GoogleSheetsDataError(`The "${tab}" tab has no employee email column.`);
@@ -642,14 +709,7 @@ async function recalculateWeeklyTally(
         }
         const row = matches[0];
         if (!row?.[dateColumn]) continue;
-        const parsed: unknown = JSON.parse(row[dateColumn]);
-        if (typeof parsed !== "object" || parsed === null) {
-          throw new GoogleSheetsDataError("The CSG completion date metadata is invalid.");
-        }
-        const completionDates = Object.values(parsed);
-        if (completionDates.some((value) => typeof value !== "string")) {
-          throw new GoogleSheetsDataError("The CSG completion date metadata is invalid.");
-        }
+        const completionDates = Object.values(parseCsgCompletionDates(row[dateColumn]));
         count += completionDates.filter((value) =>
           dateInSameWorkWeek(value, date),
         ).length;
