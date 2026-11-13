@@ -32,8 +32,9 @@ open `/admin`; the admin header's **Personal view** option returns to `/`.
 The admin Overview and Trainings sections load scheduled sessions from the
 configured Google Sheets. Creating a training writes it to the BON Training
 Progress Tracker and, for TTT sessions, to the TTT master schedule. People & TIP
-loads CSG and HCA course records from the course trackers;
-admins can update completion checkboxes/dates and assign HCA courses. TTT
+loads CSG course records from its tracker and HCA course records from the `HCA`
+tab in the configured attendance spreadsheet. Admins can update course
+completion dates and assign HCA courses. TTT
 attendance can be updated from a training row, including additional attendees,
 and those attendance changes update the matching BON weekly TTT tally.
 Reporting combines check-ins with recorded TTT attendance. Other People & TIP
@@ -65,10 +66,11 @@ Enable the Google Sheets API, create a service account, and share each
 spreadsheet below with its service-account email as an Editor. Store the
 service account JSON key as `GOOGLE_SERVICE_ACCOUNT_JSON` in `.env.local` and
 as a server-side Vercel environment variable; do not commit the key or expose it
-to client code. Configure the IDs for all four sheets using the corresponding
-`GOOGLE_SHEETS_*_ID` variables in `.env.example`. Also share the configured
-attendance spreadsheet (`GOOGLE_SHEETS_SPREADSHEET_ID`) with the service
-account so check-in and attendance reporting continue to work.
+to client code. Configure the IDs for the training progress, TTT, and CSG
+trackers using the corresponding `GOOGLE_SHEETS_*_ID` variables in
+`.env.example`. The `GOOGLE_SHEETS_SPREADSHEET_ID` spreadsheet is used for
+attendance check-ins and its `HCA` tab stores the HCA course tracker. Share it
+with the service account as an Editor as well.
 
 Each configured file ID must refer to a native Google Sheets document. If a
 tracker is an Excel/Office workbook opened in Google Sheets, use **File > Save
@@ -93,14 +95,14 @@ transactional; if a fan-out write fails, the admin API reports which
 destinations succeeded, and retrying the same form submission uses its stable
 UUID to avoid duplicate rows.
 
-The employee passport finds records by normalized full name and backfills
-employee email metadata when an unambiguous directory match is available.
-CSG keeps its visible `M/YY` dates and stores exact completion dates in hidden
-metadata; HCA completion dates and employee emails are also stored in hidden
-columns. CSG and HCA edits rebuild the BON weekly totals from those exact dates
-rather than incrementing counters, so retries do not double-count. Training
-goals are persisted by employee email in a `Training Goals` tab in the BON
-training progress spreadsheet.
+The employee passport finds CSG and HCA records by normalized full name and
+backfills employee email metadata when an unambiguous directory match is
+available. CSG keeps its visible `M/YY` dates and stores exact completion dates
+in hidden metadata; HCA completion dates and employee emails are stored in
+hidden columns on the `HCA` tab. CSG and HCA edits rebuild BON weekly totals
+from exact dates rather than incrementing counters, so retries do not
+double-count. Training goals are persisted by employee email in a
+`Training Goals` tab in the BON training progress spreadsheet.
 
 TTT attendance matching uses the session title/date and roster name; it
 updates the weekly TTT count from checked attendance rows. When a TTT training

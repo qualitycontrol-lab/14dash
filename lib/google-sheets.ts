@@ -4,13 +4,13 @@ import { google, type sheets_v4 } from "googleapis";
 export type AdminSpreadsheet =
   | "trainingProgress"
   | "tttSystem"
-  | "hcaCourses"
+  | "attendance"
   | "csgTracker";
 
 const spreadsheetEnvironmentVariables: Record<AdminSpreadsheet, string> = {
   trainingProgress: "GOOGLE_SHEETS_TRAINING_PROGRESS_ID",
   tttSystem: "GOOGLE_SHEETS_TTT_SYSTEM_ID",
-  hcaCourses: "GOOGLE_SHEETS_HCA_COURSES_ID",
+  attendance: "GOOGLE_SHEETS_SPREADSHEET_ID",
   csgTracker: "GOOGLE_SHEETS_CSG_TRACKER_ID",
 };
 

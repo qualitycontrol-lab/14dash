@@ -22,6 +22,7 @@ const CSG_TABS = [
   "Individual Self-Governance",
   "Discussion Group",
 ] as const;
+const HCA_TAB = "HCA";
 
 type PassportCourse = {
   id: string;
@@ -173,10 +174,10 @@ async function findCsgCourses(name: string): Promise<PassportCourse[]> {
 }
 
 async function findHcaCourses(name: string): Promise<PassportCourse[]> {
-  const spreadsheetId = getSpreadsheetId("hcaCourses");
+  const spreadsheetId = getSpreadsheetId("attendance");
   const metadataColumns = await ensureHiddenColumns(
     spreadsheetId,
-    "Sheet1",
+    HCA_TAB,
     1,
     ["BON Employee Email", "Associated Employee Email", "Record UUID", "Completion Date ISO"],
     7,
@@ -185,7 +186,7 @@ async function findHcaCourses(name: string): Promise<PassportCourse[]> {
   if (completionDateColumn === undefined) {
     throw new GoogleSheetsDataError("The HCA tracker has no completion date column.");
   }
-  const values = await readSheetValues(spreadsheetId, "'Sheet1'!A:K");
+  const values = await readSheetValues(spreadsheetId, `${quoteSheetName(HCA_TAB)}!A:K`);
   const normalizedName = normalizeName(name);
   const courses: PassportCourse[] = [];
 
@@ -199,7 +200,7 @@ async function findHcaCourses(name: string): Promise<PassportCourse[]> {
       const title = row[titleColumn]?.trim();
       if (!title) continue;
       courses.push({
-        id: `hca|Sheet1|${rowIndex + 1}|${checkColumn}|${encodeURIComponent(title)}`,
+        id: `hca|${HCA_TAB}|${rowIndex + 1}|${checkColumn}|${encodeURIComponent(title)}`,
         title,
         type: "HCA",
         date: row[completionDateColumn] ?? "",
@@ -312,15 +313,15 @@ async function updateHcaCourse(
   date: string,
   email: string,
 ): Promise<void> {
-  const spreadsheetId = getSpreadsheetId("hcaCourses");
+  const spreadsheetId = getSpreadsheetId("attendance");
   const metadataColumns = await ensureHiddenColumns(
     spreadsheetId,
-    "Sheet1",
+    HCA_TAB,
     1,
     ["BON Employee Email", "Associated Employee Email", "Record UUID", "Completion Date ISO"],
     7,
   );
-  const values = await readSheetValues(spreadsheetId, "'Sheet1'!A:K");
+  const values = await readSheetValues(spreadsheetId, `${quoteSheetName(HCA_TAB)}!A:K`);
   const row = values[rowNumber - 1];
   if (
     !row ||
@@ -338,17 +339,17 @@ async function updateHcaCourse(
   }
   const updates = [
     {
-      range: `'Sheet1'!${columnLetter(checkColumn)}${rowNumber}`,
+      range: `${quoteSheetName(HCA_TAB)}!${columnLetter(checkColumn)}${rowNumber}`,
       values: [[completed]],
     },
     {
-      range: `'Sheet1'!${columnLetter(completionDateColumn)}${rowNumber}`,
+      range: `${quoteSheetName(HCA_TAB)}!${columnLetter(completionDateColumn)}${rowNumber}`,
       values: [[completed ? date : ""]],
     },
   ];
   if (email) {
     updates.push({
-      range: `'Sheet1'!${columnLetter(emailColumn)}${rowNumber}`,
+      range: `${quoteSheetName(HCA_TAB)}!${columnLetter(emailColumn)}${rowNumber}`,
       values: [[email.trim().toLowerCase()]],
     });
   }
@@ -364,8 +365,8 @@ async function assignHcaCourse(
   team: "bon" | "associated",
   month: string,
 ): Promise<void> {
-  const spreadsheetId = getSpreadsheetId("hcaCourses");
-  const values = await readSheetValues(spreadsheetId, "'Sheet1'!A:J");
+  const spreadsheetId = getSpreadsheetId("attendance");
+  const values = await readSheetValues(spreadsheetId, `${quoteSheetName(HCA_TAB)}!A:J`);
   const [year, monthNumber] = month.split("-").map(Number);
   const monthLabel = new Intl.DateTimeFormat("en", {
     month: "long",
@@ -493,10 +494,10 @@ async function backfillEmployeeEmail(name: string, email: string): Promise<void>
       }
     }
 
-    const hcaId = getSpreadsheetId("hcaCourses");
+    const hcaId = getSpreadsheetId("attendance");
     const hcaColumns = await ensureHiddenColumns(
       hcaId,
-      "Sheet1",
+      HCA_TAB,
       1,
       ["BON Employee Email", "Associated Employee Email", "Record UUID", "Completion Date ISO"],
       7,
@@ -505,7 +506,7 @@ async function backfillEmployeeEmail(name: string, email: string): Promise<void>
     if (bonEmailColumn === undefined) {
       throw new GoogleSheetsDataError("The HCA tracker has no BON employee email column.");
     }
-    const hcaValues = await readSheetValues(hcaId, "'Sheet1'!A:K");
+    const hcaValues = await readSheetValues(hcaId, `${quoteSheetName(HCA_TAB)}!A:K`);
     const hcaRows = hcaValues.flatMap((row, index) =>
       normalizeName(row[2] ?? "") === normalizedName ? [index + 1] : [],
     );
@@ -515,7 +516,7 @@ async function backfillEmployeeEmail(name: string, email: string): Promise<void>
         requestBody: {
           valueInputOption: "RAW",
           data: hcaRows.map((row) => ({
-            range: `'Sheet1'!${columnLetter(bonEmailColumn)}${row}`,
+            range: `${quoteSheetName(HCA_TAB)}!${columnLetter(bonEmailColumn)}${row}`,
             values: [[normalizedEmail]],
           })),
         },
@@ -615,7 +616,6 @@ async function recalculateWeeklyTally(
     category: "CSG" | "HCA",
   ): Promise<void> {
     const csgId = getSpreadsheetId("csgTracker");
-    const hcaId = getSpreadsheetId("hcaCourses");
     let count = 0;
 
     if (category === "CSG") {
@@ -655,9 +655,10 @@ async function recalculateWeeklyTally(
         ).length;
       }
     } else {
+      const hcaId = getSpreadsheetId("attendance");
       const columns = await ensureHiddenColumns(
         hcaId,
-        "Sheet1",
+        HCA_TAB,
         1,
         ["BON Employee Email", "Associated Employee Email", "Record UUID", "Completion Date ISO"],
         7,
@@ -666,7 +667,7 @@ async function recalculateWeeklyTally(
       if (dateColumn === undefined) {
         throw new GoogleSheetsDataError("The HCA tracker has no completion date column.");
       }
-      const values = await readSheetValues(hcaId, "'Sheet1'!A:K");
+      const values = await readSheetValues(hcaId, `${quoteSheetName(HCA_TAB)}!A:K`);
       count = values.reduce((total, row) => {
         const bonRecord =
           normalizeName(row[2] ?? "") === normalizeName(employeeName) && isChecked(row[1]);
@@ -750,15 +751,15 @@ async function finishHcaAssignment(
       valueInputOption: "USER_ENTERED",
       data: [
         {
-          range: `'Sheet1'!${columnLetter(checkColumn)}${availableRow + 1}`,
+          range: `${quoteSheetName(HCA_TAB)}!${columnLetter(checkColumn)}${availableRow + 1}`,
           values: [[false]],
         },
         {
-          range: `'Sheet1'!${columnLetter(nameColumn)}${availableRow + 1}`,
+          range: `${quoteSheetName(HCA_TAB)}!${columnLetter(nameColumn)}${availableRow + 1}`,
           values: [[name]],
         },
         {
-          range: `'Sheet1'!${columnLetter(titleColumn)}${availableRow + 1}`,
+          range: `${quoteSheetName(HCA_TAB)}!${columnLetter(titleColumn)}${availableRow + 1}`,
           values: [[courseTitle]],
         },
       ],

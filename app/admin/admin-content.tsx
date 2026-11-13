@@ -1867,23 +1867,21 @@ function PeopleView() {
                           ) : typeof course.id === "string" &&
                             (course.id.startsWith("csg|") || course.id.startsWith("hca|")) ? (
                             <>
-                              {(course.type === "CSG" || course.type === "HCA") && (
-                                <input
-                                  type="date"
-                                  aria-label={`Exact completion date for ${course.title}`}
-                                  value={
-                                    courseDates[String(course.id)] ??
-                                    (/^\d{4}-\d{2}-\d{2}$/.test(course.date) ? course.date : "")
-                                  }
-                                  onChange={(event) =>
-                                    setCourseDates((current) => ({
-                                      ...current,
-                                      [String(course.id)]: event.target.value,
-                                    }))
-                                  }
-                                  className="h-7 w-[130px] rounded-[7px] border border-[#d8e1de] px-1 text-[9px]"
-                                />
-                              )}
+                              <input
+                                type="date"
+                                aria-label={`Exact completion date for ${course.title}`}
+                                value={
+                                  courseDates[String(course.id)] ??
+                                  (/^\d{4}-\d{2}-\d{2}$/.test(course.date) ? course.date : "")
+                                }
+                                onChange={(event) =>
+                                  setCourseDates((current) => ({
+                                    ...current,
+                                    [String(course.id)]: event.target.value,
+                                  }))
+                                }
+                                className="h-7 w-[130px] rounded-[7px] border border-[#d8e1de] px-1 text-[9px]"
+                              />
                               <button
                                 disabled={
                                   savingCourseId === course.id ||
