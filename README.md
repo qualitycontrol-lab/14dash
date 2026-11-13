@@ -71,7 +71,8 @@ attendance spreadsheet (`GOOGLE_SHEETS_SPREADSHEET_ID`) with the service
 account so check-in and attendance reporting continue to work.
 
 The admin training API reads the BON `Training Schedule`, `TTT`, and `LF` tabs
-and the TTT `Schedule` and `Upcoming TTT` tabs. The BON `Training Schedule`
+and the TTT `Schedule` tab. It does not depend on the unused `Upcoming TTT` tab.
+The BON `Training Schedule`
 matrix is parsed from its year/category sections, including CSG date ranges and
 Learning Forum trainer labels. A structured `Admin Training Schedule` tab is
 created in the BON tracker for new dashboard records, preserving titles,
@@ -81,7 +82,7 @@ existing matrix when its matching year/category section is available. The
 formatted TTT `Schedule` tab is read and updated in its side-by-side 2025/2026
 date-and-title sections; hidden UUID columns keep dashboard writes idempotent
 without changing the visible layout. TTT and LF creations are also written to
-their corresponding category tabs. Writes to multiple Google Sheets are not
+their corresponding BON category tabs. Writes to multiple Google Sheets are not
 transactional; if a fan-out write fails, the admin API reports which
 destinations succeeded, and retrying the same form submission uses its stable
 UUID to avoid duplicate rows.

@@ -984,7 +984,7 @@ export async function GET() {
       ADMIN_SCHEDULE_TAB,
       ADMIN_SCHEDULE_HEADERS,
     );
-    const [progressScheduleValues, adminSchedule, tttScheduleValues, upcomingTtt, tttLog, lfSchedule] =
+    const [progressScheduleValues, adminSchedule, tttScheduleValues, tttLog, lfSchedule] =
       await Promise.all([
         readSheetValues(
           trainingProgressId,
@@ -992,14 +992,12 @@ export async function GET() {
         ),
         readSheetTable(trainingProgressId, ADMIN_SCHEDULE_TAB),
         readSheetValues(tttSystemId, `${quoteSheetName("Schedule")}!A:ZZ`),
-        readSheetTable(tttSystemId, "Upcoming TTT"),
         readSheetTable(trainingProgressId, "TTT"),
         readSheetTable(trainingProgressId, "LF"),
       ]);
     const detailedTrainings = [
       ...parseTable(adminSchedule, ADMIN_SCHEDULE_TAB),
       ...parseTttMasterSchedule(tttScheduleValues),
-      ...parseTable(upcomingTtt, "Upcoming TTT", "TTT"),
       ...parseTable(tttLog, "TTT", "TTT"),
       ...parseTable(lfSchedule, "LF", "LF"),
     ];
@@ -1076,10 +1074,7 @@ export async function POST(request: Request) {
     ["trainingProgress", ADMIN_SCHEDULE_TAB],
   ];
   if (record.type === "TTT") {
-    destinations.push(
-      ["tttSystem", "Upcoming TTT", "TTT"],
-      ["trainingProgress", "TTT", "TTT"],
-    );
+    destinations.push(["trainingProgress", "TTT", "TTT"]);
   } else if (record.type === "LF") {
     destinations.push(["trainingProgress", "LF", "LF"]);
   }
