@@ -1844,7 +1844,7 @@ function PeopleView() {
                         <h3 className="mt-2 line-clamp-2 min-h-8 text-[11px] font-medium leading-4 text-[#283a36]">{course.title}</h3>
                         <p className="mt-1 text-[10px] text-[#71807c]">
                           {course.date
-                            ? course.type === "CSG" && /^\d{1,2}\/\d{2}$/.test(course.date)
+                            ? course.type === "CSG" && !/^\d{4}-\d{2}-\d{2}$/.test(course.date)
                               ? course.date
                               : formatDate(course.date)
                             : "—"}
