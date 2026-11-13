@@ -984,7 +984,7 @@ export async function GET() {
       ADMIN_SCHEDULE_TAB,
       ADMIN_SCHEDULE_HEADERS,
     );
-    const [progressScheduleValues, adminSchedule, tttScheduleValues, lfSchedule] =
+    const [progressScheduleValues, adminSchedule, tttScheduleValues] =
       await Promise.all([
         readSheetValues(
           trainingProgressId,
@@ -992,12 +992,10 @@ export async function GET() {
         ),
         readSheetTable(trainingProgressId, ADMIN_SCHEDULE_TAB),
         readSheetValues(tttSystemId, `${quoteSheetName("Schedule")}!A:ZZ`),
-        readSheetTable(trainingProgressId, "LF"),
       ]);
     const detailedTrainings = [
       ...parseTable(adminSchedule, ADMIN_SCHEDULE_TAB),
       ...parseTttMasterSchedule(tttScheduleValues),
-      ...parseTable(lfSchedule, "LF", "LF"),
     ];
     const detailedTypeDates = new Set(
       detailedTrainings.map((training) => `${training.type}|${training.date}`),
@@ -1071,9 +1069,6 @@ export async function POST(request: Request) {
   const destinations: Array<[AdminSpreadsheet, string, TrainingType?]> = [
     ["trainingProgress", ADMIN_SCHEDULE_TAB],
   ];
-  if (record.type === "LF") {
-    destinations.push(["trainingProgress", "LF", "LF"]);
-  }
 
   const completedDestinations: string[] = [];
   try {

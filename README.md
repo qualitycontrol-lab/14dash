@@ -31,8 +31,8 @@ open `/admin`; the admin header's **Personal view** option returns to `/`.
 
 The admin Overview and Trainings sections load scheduled sessions from the
 configured Google Sheets. Creating a training writes it to the BON Training
-Progress Tracker and, for TTT and LF sessions, to their designated schedule
-tabs. People & TIP loads CSG and HCA course records from the course trackers;
+Progress Tracker and, for TTT sessions, to the TTT master schedule. People & TIP
+loads CSG and HCA course records from the course trackers;
 admins can update completion checkboxes/dates and assign HCA courses. TTT
 attendance can be updated from a training row, including additional attendees,
 and those attendance changes update the matching BON weekly TTT tally.
@@ -70,9 +70,9 @@ to client code. Configure the IDs for all four sheets using the corresponding
 attendance spreadsheet (`GOOGLE_SHEETS_SPREADSHEET_ID`) with the service
 account so check-in and attendance reporting continue to work.
 
-The admin training API reads the BON `Training Schedule` and `LF` tabs and the
-TTT system's `Schedule` tab. It does not depend on the unused `Upcoming TTT` tab
-or the BON `TTT` weekly tally tab. The BON `Training Schedule`
+The admin training API reads the BON `Training Schedule` tab and the TTT
+system's `Schedule` tab. It does not depend on the unused `Upcoming TTT` tab or
+the BON `TTT` and `LF` weekly tally tabs. The BON `Training Schedule`
 matrix is parsed from its year/category sections, including CSG date ranges and
 Learning Forum trainer labels. A structured `Admin Training Schedule` tab is
 created in the BON tracker for new dashboard records, preserving titles,
@@ -81,9 +81,8 @@ requiring changes to the formatted matrix. Dashboard writes also update the
 existing matrix when its matching year/category section is available. The
 formatted TTT `Schedule` tab is read and updated in its side-by-side 2025/2026
 date-and-title sections; hidden UUID columns keep dashboard writes idempotent
-without changing the visible layout. LF creations are also written to their BON
-category tab. TTT attendance updates continue to recalculate the BON `TTT`
-weekly tally. Writes to multiple Google Sheets are not
+without changing the visible layout. TTT attendance updates continue to
+recalculate the BON `TTT` weekly tally. Writes to multiple Google Sheets are not
 transactional; if a fan-out write fails, the admin API reports which
 destinations succeeded, and retrying the same form submission uses its stable
 UUID to avoid duplicate rows.
