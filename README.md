@@ -70,6 +70,12 @@ to client code. Configure the IDs for all four sheets using the corresponding
 attendance spreadsheet (`GOOGLE_SHEETS_SPREADSHEET_ID`) with the service
 account so check-in and attendance reporting continue to work.
 
+Each configured file ID must refer to a native Google Sheets document. If a
+tracker is an Excel/Office workbook opened in Google Sheets, use **File > Save
+as Google Sheets**, update the matching `GOOGLE_SHEETS_*_ID` setting to the new
+document ID, and share that new document with the service account as an Editor.
+The Sheets API cannot read or edit an Office workbook directly.
+
 The admin training API reads the BON `Training Schedule` tab and the TTT
 system's `Schedule` tab. It does not depend on the unused `Upcoming TTT` tab or
 the BON `TTT` and `LF` weekly tally tabs. The BON `Training Schedule`

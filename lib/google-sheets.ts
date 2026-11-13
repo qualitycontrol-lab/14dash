@@ -28,6 +28,24 @@ export class GoogleSheetsDataError extends Error {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isOfficeFileError(error: unknown): boolean {
+  if (!isRecord(error)) return false;
+  const response = isRecord(error.response) ? error.response : null;
+  const data = response && isRecord(response.data) ? response.data : null;
+  const apiError = data && isRecord(data.error) ? data.error : null;
+  const cause = isRecord(error.cause) ? error.cause : null;
+  const messages = [error.message, apiError?.message, cause?.message];
+  return messages.some(
+    (message) =>
+      typeof message === "string" &&
+      /document must not be an Office file|Office file/i.test(message),
+  );
+}
+
 export type SheetTable = {
   headers: string[];
   rows: string[][];
@@ -92,13 +110,25 @@ export async function readSheetValues(
   spreadsheetId: string,
   range: string,
 ): Promise<string[][]> {
-  const response = await getGoogleSheetsClient().spreadsheets.values.get({
-    spreadsheetId,
-    range,
-  });
-  return (response.data.values ?? []).map((row) =>
-    row.map((value) => String(value ?? "").trim()),
-  );
+  try {
+    const response = await getGoogleSheetsClient().spreadsheets.values.get({
+      spreadsheetId,
+      range,
+    });
+    return (response.data.values ?? []).map((row) =>
+      row.map((value) => String(value ?? "").trim()),
+    );
+  } catch (error) {
+    if (!isOfficeFileError(error)) throw error;
+
+    const environmentVariable = Object.entries(spreadsheetEnvironmentVariables).find(
+      ([, variable]) => process.env[variable] === spreadsheetId,
+    )?.[1];
+    const setting = environmentVariable ?? "the matching GOOGLE_SHEETS_*_ID setting";
+    throw new GoogleSheetsDataError(
+      `The spreadsheet configured by ${setting} is an Excel/Office file. The Sheets API requires a native Google Sheet. Open the workbook in Google Sheets, choose File > Save as Google Sheets, update ${setting} to the new spreadsheet ID, and share the new file with the service account as an Editor.`,
+    );
+  }
 }
 
 export async function writeSheetValues(
