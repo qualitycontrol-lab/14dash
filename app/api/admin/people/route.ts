@@ -38,6 +38,40 @@ function response(body: unknown, status = 200) {
   });
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function googleSheetsErrorDetails(error: unknown): string {
+  if (!isRecord(error)) {
+    return JSON.stringify({ message: String(error) });
+  }
+
+  const response = isRecord(error.response) ? error.response : undefined;
+  const data = isRecord(response?.data) ? response.data : undefined;
+  const apiError = isRecord(data?.error) ? data.error : undefined;
+  const cause = isRecord(error.cause) ? error.cause : undefined;
+  const apiErrors = Array.isArray(apiError?.errors)
+    ? apiError.errors
+    : Array.isArray(cause?.errors)
+      ? cause.errors
+      : [];
+
+  return JSON.stringify({
+    status: error.status ?? response?.status ?? cause?.status,
+    code: error.code ?? cause?.code,
+    message: apiError?.message ?? cause?.message ?? error.message,
+    errors: apiErrors.map((item) => {
+      if (!isRecord(item)) return item;
+      return {
+        domain: item.domain,
+        reason: item.reason,
+        message: item.message,
+      };
+    }),
+  });
+}
+
 function normalizeName(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
@@ -765,7 +799,11 @@ export async function GET(request: Request) {
     if (error instanceof GoogleSheetsDataError) {
       return response({ error: error.message }, 409);
     }
-    console.error("Employee passport lookup failed:", error);
+    console.error(
+      "Employee passport lookup failed:",
+      error instanceof Error ? error.message : String(error),
+      `Google API details=${googleSheetsErrorDetails(error)}`,
+    );
     return response({ error: "Unable to load employee course records." }, 502);
   }
 }
