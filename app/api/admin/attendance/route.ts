@@ -1,13 +1,88 @@
 import { getServerSession } from "next-auth";
-import { google } from "googleapis";
 import { NextResponse } from "next/server";
 import { isAdminEmail } from "@/lib/auth";
 import {
-  createGoogleOAuthClient,
-  GoogleOAuthConfigurationError,
-} from "@/lib/google";
+  getGoogleSheetsClient,
+  getSpreadsheetId,
+  GoogleSheetsConfigurationError,
+  readSheetValues,
+  quoteSheetName,
+} from "@/lib/google-sheets";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+function isChecked(value: string | undefined): boolean {
+  return ["true", "yes", "1", "✓"].includes((value ?? "").trim().toLowerCase());
+}
+
+function isSessionHeading(row: string[]): boolean {
+  return Boolean(row[0]?.trim()) && !row[1]?.trim() && !/^last name$/i.test(row[0].trim());
+}
+
+function sessionDate(value: string): Date | null {
+  const match =
+    /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:,?\s+(\d{4}))?/i.exec(
+      value,
+    );
+  if (!match) return null;
+  const parsed = new Date(`${match[1]} ${match[2]}, ${match[3] ?? "2026"} UTC`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+async function readTttAttendance() {
+  const spreadsheetId = getSpreadsheetId("tttSystem");
+  const sessions = await Promise.all(
+    ["2025 TTT Attendance", "2026 TTT Attendance"].map(async (sheetName) => {
+      const values = await readSheetValues(
+        spreadsheetId,
+        `${quoteSheetName(sheetName)}!A:K`,
+      );
+      const entries: Array<{
+        checkedInAt: string;
+        training: string;
+        category: string;
+        name: string;
+        email: string;
+      }> = [];
+      for (let index = 0; index < values.length; index += 1) {
+        const row = values[index] ?? [];
+        if (!isSessionHeading(row)) continue;
+        const date = sessionDate(row[0] ?? "");
+        if (!date) continue;
+
+        for (let attendeeIndex = index + 1; attendeeIndex < values.length; attendeeIndex += 1) {
+          const attendee = values[attendeeIndex] ?? [];
+          if (isSessionHeading(attendee)) break;
+          if (isChecked(attendee[5])) {
+            const name = `${attendee[1] ?? ""} ${attendee[0] ?? ""}`.trim();
+            if (name) {
+              entries.push({
+                checkedInAt: date.toISOString(),
+                training: row[0],
+                category: "Train the Trainer",
+                name,
+                email: (attendee[10] ?? "").toLowerCase(),
+              });
+            }
+          }
+          const walkIn = attendee[7]?.trim();
+          if (walkIn) {
+            entries.push({
+              checkedInAt: date.toISOString(),
+              training: row[0],
+              category: "Train the Trainer",
+              name: walkIn,
+              email: (attendee[10] ?? "").toLowerCase(),
+            });
+          }
+        }
+      }
+      return entries;
+    }),
+  );
+  return sessions.flat();
+}
 
 export async function GET() {
   const session = await getServerSession();
@@ -28,14 +103,17 @@ export async function GET() {
   }
 
   try {
-    const sheets = google.sheets({ version: "v4", auth: createGoogleOAuthClient() });
+    const sheets = getGoogleSheetsClient();
     const escapedSheetName = sheetName.replaceAll("'", "''");
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `'${escapedSheetName}'!A:E`,
-    });
+    const [attendanceResponse, tttEntries] = await Promise.all([
+      sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `'${escapedSheetName}'!A:E`,
+      }),
+      readTttAttendance(),
+    ]);
 
-    const entries = (response.data.values ?? []).flatMap((row) => {
+    const entries = (attendanceResponse.data.values ?? []).flatMap((row) => {
       const [timestamp, training, name, email, category = ""] = row.map((value) => String(value ?? "").trim());
       const checkedInAt = new Date(timestamp);
 
@@ -58,9 +136,9 @@ export async function GET() {
       }];
     });
 
-    return NextResponse.json(entries);
+    return NextResponse.json([...entries, ...tttEntries]);
   } catch (error) {
-    if (error instanceof GoogleOAuthConfigurationError) {
+    if (error instanceof GoogleSheetsConfigurationError) {
       console.error("Attendance reporting is not configured:", error.message);
       return NextResponse.json(
         { error: "Attendance reporting is not configured." },

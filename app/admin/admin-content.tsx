@@ -8,7 +8,7 @@ type TrainingType = "HCA" | "CSG" | "TTT" | "LF" | "OTA" | "WS" | "Misc";
 type TrainingStatus = "Upcoming" | "Completed";
 type AttendeeType = "Employee" | "Other / Community" | "Associated Company" | "Other";
 type Training = {
-  id: number;
+  id: string | number;
   title: string;
   type: TrainingType;
   date: string;
@@ -34,13 +34,6 @@ const trainingTypes: { code: TrainingType; name: string; tone: string }[] = [
   { code: "OTA", name: "Online Training Academy", tone: "text-[#268a87] bg-[#d8f1ea]" },
   { code: "WS", name: "Workshop", tone: "text-[#c77b3d] bg-[#fbe5d9]" },
   { code: "Misc", name: "Miscellaneous", tone: "text-[#65726e] bg-[#e9eeeb]" },
-];
-
-const initialTrainings: Training[] = [
-  { id: 1, title: "Administration Basics", type: "HCA", date: "2026-11-08", attendees: 20, bonAttendees: 14, attendeeType: "Employee", checkIns: 1, status: "Upcoming" },
-  { id: 2, title: "Self Governance Roundtable", type: "CSG", date: "2026-11-14", attendees: 16, bonAttendees: 16, attendeeType: "Associated Company", checkIns: 0, status: "Upcoming" },
-  { id: 3, title: "Warehouse Safety Workshop", type: "WS", date: "2026-10-28", attendees: 15, bonAttendees: 12, attendeeType: "Employee", checkIns: 0, status: "Completed" },
-  { id: 4, title: "Learning Forum: Leadership", type: "LF", date: "2026-10-23", attendees: 30, bonAttendees: 18, attendeeType: "Other / Community", checkIns: 2, status: "Completed" },
 ];
 
 const navigation: AdminSection[] = [
@@ -109,6 +102,110 @@ function TrainingList({ trainings }: { trainings: Training[] }) {
         </article>
       ))}
     </div>
+  );
+}
+
+function TttAttendanceForm({ training }: { training: Training }) {
+  const [employeeName, setEmployeeName] = useState("");
+  const [employeeEmail, setEmployeeEmail] = useState("");
+  const [attended, setAttended] = useState(true);
+  const [additionalAttendee, setAdditionalAttendee] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+
+  async function saveAttendance(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSaving(true);
+    setNotice("");
+    setError("");
+    try {
+      const response = await fetch("/api/admin/ttt-attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: training.title,
+          date: training.date,
+          ...(employeeName.trim() ? { employeeName: employeeName.trim(), attended } : {}),
+          ...(employeeEmail.trim() ? { employeeEmail: employeeEmail.trim() } : {}),
+          ...(additionalAttendee.trim()
+            ? { additionalAttendee: additionalAttendee.trim() }
+            : {}),
+        }),
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          isRecord(result) && typeof result.error === "string"
+            ? result.error
+            : "Unable to update TTT attendance.",
+        );
+      }
+      if (!isTttAttendanceResult(result)) {
+        throw new Error("TTT attendance returned an invalid response.");
+      }
+      setNotice("TTT attendance was saved.");
+      setEmployeeName("");
+      setEmployeeEmail("");
+      setAdditionalAttendee("");
+    } catch (saveError) {
+      console.error("TTT attendance save failed:", saveError);
+      setError(
+        saveError instanceof Error ? saveError.message : "Unable to update TTT attendance.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <details className="w-full rounded-[12px] border border-[#d7e1dd] bg-white p-3">
+      <summary className="cursor-pointer text-xs font-semibold text-[#147e78]">
+        Update TTT attendance
+      </summary>
+      <form onSubmit={saveAttendance} className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto_1fr_auto]">
+        <input
+          value={employeeName}
+          onChange={(event) => setEmployeeName(event.target.value)}
+          placeholder="Employee full name"
+          aria-label="Employee full name"
+          className="h-9 min-w-0 rounded-[9px] border border-[#cfdad6] px-3 text-xs"
+        />
+        <input
+          type="email"
+          value={employeeEmail}
+          onChange={(event) => setEmployeeEmail(event.target.value)}
+          placeholder="BON email (optional)"
+          aria-label="BON employee email"
+          className="h-9 min-w-0 rounded-[9px] border border-[#cfdad6] px-3 text-xs"
+        />
+        <label className="flex items-center gap-2 text-xs text-[#536663]">
+          <input
+            type="checkbox"
+            checked={attended}
+            onChange={(event) => setAttended(event.target.checked)}
+            disabled={!employeeName.trim()}
+          />
+          Attended
+        </label>
+        <input
+          value={additionalAttendee}
+          onChange={(event) => setAdditionalAttendee(event.target.value)}
+          placeholder="Additional attendee"
+          aria-label="Additional attendee"
+          className="h-9 min-w-0 rounded-[9px] border border-[#cfdad6] px-3 text-xs"
+        />
+        <button
+          type="submit"
+          disabled={isSaving || (!employeeName.trim() && !additionalAttendee.trim())}
+          className="h-9 rounded-[9px] bg-[#1a7771] px-3 text-xs font-semibold text-white disabled:opacity-50"
+        >
+          {isSaving ? "Saving…" : "Save"}
+        </button>
+      </form>
+      {notice && <p role="status" className="mt-2 text-xs text-[#147e78]">{notice}</p>}
+      {error && <p role="alert" className="mt-2 text-xs text-[#a94856]">{error}</p>}
+    </details>
   );
 }
 
@@ -187,6 +284,7 @@ function TrainingLog({
                   </span>
                   <button onClick={() => exportTraining(training)} className="px-2 py-1 text-xs font-medium text-[#147e78] hover:underline">Export</button>
                   <button onClick={() => window.print()} className="px-2 py-1 text-xs font-medium text-[#147e78] hover:underline">Print</button>
+                  {training.type === "TTT" && <TttAttendanceForm training={training} />}
                 </article>
               );
             })}
@@ -292,13 +390,21 @@ function Overview({ trainings, onNavigate }: { trainings: Training[]; onNavigate
   );
 }
 
-function TrainingForm({ onCreate }: { onCreate: (training: Omit<Training, "id">) => void }) {
+function TrainingForm({
+  onCreate,
+  submitError,
+}: {
+  onCreate: (training: Omit<Training, "id">, requestId: string) => Promise<boolean>;
+  submitError: string | null;
+}) {
   const [title, setTitle] = useState("");
   const [titleError, setTitleError] = useState(false);
   const [type, setType] = useState<TrainingType>("CSG");
   const [date, setDate] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [requestId, setRequestId] = useState("");
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
@@ -306,10 +412,22 @@ function TrainingForm({ onCreate }: { onCreate: (training: Omit<Training, "id">)
       return;
     }
 
-    onCreate({ title: trimmedTitle, type, date, attendees: 0, status: "Upcoming" });
-    setTitle("");
-    setTitleError(false);
-    setDate("");
+    setIsSaving(true);
+    const stableRequestId = requestId || crypto.randomUUID();
+    setRequestId(stableRequestId);
+    try {
+      const saved = await onCreate(
+        { title: trimmedTitle, type, date, attendees: 0, status: "Upcoming" },
+        stableRequestId,
+      );
+      if (!saved) return;
+      setTitle("");
+      setTitleError(false);
+      setDate("");
+      setRequestId("");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -363,10 +481,12 @@ function TrainingForm({ onCreate }: { onCreate: (training: Omit<Training, "id">)
           </label>
           <button
             type="submit"
-            className="inline-flex h-12 items-center justify-center rounded-full bg-[#1aa6a1] px-6 text-sm font-semibold text-white transition-colors hover:bg-[#148d88]"
+            disabled={isSaving}
+            className="inline-flex h-12 items-center justify-center rounded-full bg-[#1aa6a1] px-6 text-sm font-semibold text-white transition-colors hover:bg-[#148d88] disabled:cursor-wait disabled:opacity-60"
           >
-            Add training to preview
+            {isSaving ? "Saving to Google Sheets…" : "Save training"}
           </button>
+          {submitError && <p role="alert" className="text-sm text-[#a94856]">{submitError}</p>}
         </form>
       </section>
 
@@ -381,7 +501,7 @@ function TrainingForm({ onCreate }: { onCreate: (training: Omit<Training, "id">)
         <div className="mt-8 border-t border-white/20 pt-5 text-sm text-[#ebfffb]">
           {date ? formatDate(date) : "Choose a date"}
           <p className="mt-5 rounded-[14px] border border-white/20 bg-white/10 p-4 text-xs leading-5">
-            Preview only. Trainings added here are not saved after you leave this page.
+            Training details are saved to the configured Google Sheets.
           </p>
         </div>
       </aside>
@@ -449,6 +569,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function isTrainingRecord(value: unknown): value is Training {
+  return (
+    isRecord(value) &&
+    (typeof value.id === "string" || typeof value.id === "number") &&
+    typeof value.title === "string" &&
+    trainingTypes.some(({ code }) => code === value.type) &&
+    typeof value.date === "string" &&
+    typeof value.attendees === "number" &&
+    (value.status === "Upcoming" || value.status === "Completed")
+  );
+}
+
 function isDirectoryEmployee(value: unknown): value is DirectoryEmployee {
   return (
     isRecord(value) &&
@@ -487,6 +619,21 @@ function isSellabilityCourse(value: unknown): value is SellabilityCourseResponse
   );
 }
 
+function isPassportCourse(value: unknown): value is PassportCourse {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.title === "string" &&
+    (value.type === "CSG" || value.type === "HCA") &&
+    typeof value.date === "string" &&
+    (value.status === "Confirmed" || value.status === "Not Started")
+  );
+}
+
+function isTttAttendanceResult(value: unknown): value is { ok: true } {
+  return isRecord(value) && value.ok === true;
+}
+
 function PeopleView() {
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [recentPeople, setRecentPeople] = useState<PersonRecord[]>([]);
@@ -496,11 +643,20 @@ function PeopleView() {
   const [directoryLoading, setDirectoryLoading] = useState(false);
   const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [category, setCategory] = useState<TrainingType | "All">("All");
-  const [newCourseTitle, setNewCourseTitle] = useState("");
   const [newGoalTitle, setNewGoalTitle] = useState("");
-  const [addingCourse, setAddingCourse] = useState(false);
   const [addingGoal, setAddingGoal] = useState(false);
   const [notice, setNotice] = useState("");
+  const [passportCourses, setPassportCourses] = useState<PassportCourse[]>([]);
+  const [passportPersonId, setPassportPersonId] = useState("");
+  const [passportLoading, setPassportLoading] = useState(false);
+  const [passportError, setPassportError] = useState<string | null>(null);
+  const [completionMonth, setCompletionMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [savingCourseId, setSavingCourseId] = useState<string | number | null>(null);
+  const [hcaCourseTitle, setHcaCourseTitle] = useState("");
+  const [hcaTeam, setHcaTeam] = useState<"bon" | "associated">("bon");
+  const [hcaMonth, setHcaMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [assigningHcaCourse, setAssigningHcaCourse] = useState(false);
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [sellabilityCourses, setSellabilityCourses] = useState<PassportCourse[]>([]);
   const [sellabilityPersonId, setSellabilityPersonId] = useState("");
   const [sellabilityLoading, setSellabilityLoading] = useState(true);
@@ -606,6 +762,51 @@ function PeopleView() {
 
   useEffect(() => {
     if (!selectedPerson) {
+      setPassportCourses([]);
+      setPassportError(null);
+      setPassportLoading(false);
+      return;
+    }
+
+    const person = selectedPerson;
+    const controller = new AbortController();
+    async function loadPassport() {
+      setPassportLoading(true);
+      setPassportError(null);
+      setPassportPersonId(person.id);
+      try {
+        const response = await fetch(
+          `/api/admin/people?name=${encodeURIComponent(person.name)}`,
+          { signal: controller.signal, cache: "no-store" },
+        );
+        const result: unknown = await response.json();
+        if (!response.ok) {
+          throw new Error(
+            isRecord(result) && typeof result.error === "string"
+              ? result.error
+              : "Unable to load this employee's course records.",
+          );
+        }
+        if (!Array.isArray(result) || !result.every(isPassportCourse)) {
+          throw new Error("The employee passport returned invalid course data.");
+        }
+        if (!controller.signal.aborted) setPassportCourses(result);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.error("Employee passport lookup failed:", error);
+        setPassportError(
+          error instanceof Error ? error.message : "Unable to load course records.",
+        );
+      } finally {
+        if (!controller.signal.aborted) setPassportLoading(false);
+      }
+    }
+    void loadPassport();
+    return () => controller.abort();
+  }, [selectedPerson?.id, selectedPerson?.name]);
+
+  useEffect(() => {
+    if (!selectedPerson) {
       setSellabilityCourses([]);
       setSellabilityError(null);
       setSellabilityLoading(false);
@@ -691,7 +892,10 @@ function PeopleView() {
 
   const selectedCourses = selectedPerson
     ? [
-        ...selectedPerson.courses.filter((course) => course.type !== "OTA"),
+        ...(passportPersonId === selectedPerson.id ? passportCourses : []),
+        ...selectedPerson.courses.filter(
+          (course) => course.type !== "OTA" && course.type !== "CSG" && course.type !== "HCA",
+        ),
         ...(sellabilityPersonId === selectedPerson.id ? sellabilityCourses : []),
       ]
     : [];
@@ -752,22 +956,97 @@ function PeopleView() {
     });
   }
 
-  function addCourse(event: FormEvent<HTMLFormElement>) {
+  async function setPassportCourseStatus(course: PassportCourse, completed: boolean) {
+    if (!selectedPerson) return;
+    setSavingCourseId(course.id);
+    setNotice("");
+    setPassportError(null);
+    try {
+      const response = await fetch("/api/admin/people", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: selectedPerson.name,
+          id: course.id,
+          completed,
+          date: completed ? completionMonth : "",
+        }),
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          isRecord(result) && typeof result.error === "string"
+            ? result.error
+            : "Unable to update this course.",
+        );
+      }
+      setPassportCourses((current) =>
+        current.map((item) =>
+          item.id === course.id
+            ? {
+                ...item,
+                status: completed ? "Confirmed" : "Not Started",
+                date: completed && item.type === "CSG" ? completionMonth : "",
+              }
+            : item,
+        ),
+      );
+      setNotice(`${course.title} was ${completed ? "marked complete" : "reopened"}.`);
+    } catch (error) {
+      console.error("Employee course update failed:", error);
+      setPassportError(
+        error instanceof Error ? error.message : "Unable to update this course.",
+      );
+    } finally {
+      setSavingCourseId(null);
+    }
+  }
+
+  async function assignHcaCourse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const title = newCourseTitle.trim();
-    if (!title) return;
-    updateSelectedPerson((person) => ({
-      ...person,
-      courses: [...person.courses, {
-        id: Date.now(),
-        title,
-        type: "CSG",
-        date: new Date().toISOString().slice(0, 10),
-        status: "Awaiting confirmation",
-      }],
-    }));
-    setNewCourseTitle("");
-    setAddingCourse(false);
+    if (!selectedPerson) return;
+    setAssigningHcaCourse(true);
+    setAssignmentError(null);
+    try {
+      const response = await fetch("/api/admin/people", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: selectedPerson.name,
+          courseTitle: hcaCourseTitle.trim(),
+          team: hcaTeam,
+          month: hcaMonth,
+        }),
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          isRecord(result) && typeof result.error === "string"
+            ? result.error
+            : "Unable to assign the HCA course.",
+        );
+      }
+
+      const passportResponse = await fetch(
+        `/api/admin/people?name=${encodeURIComponent(selectedPerson.name)}`,
+        { cache: "no-store" },
+      );
+      const passportResult: unknown = await passportResponse.json();
+      if (!passportResponse.ok || !Array.isArray(passportResult) || !passportResult.every(isPassportCourse)) {
+        throw new Error("HCA course was assigned, but the updated passport could not be loaded.");
+      }
+      setPassportCourses(passportResult);
+      setPassportPersonId(selectedPerson.id);
+      setHcaCourseTitle("");
+      setNotice("HCA course assigned.");
+    } catch (error) {
+      console.error("HCA course assignment failed:", error);
+      setAssignmentError(
+        error instanceof Error ? error.message : "Unable to assign the HCA course.",
+      );
+    } finally {
+      setAssigningHcaCourse(false);
+    }
   }
 
   function addGoal(event: FormEvent<HTMLFormElement>) {
@@ -936,27 +1215,60 @@ function PeopleView() {
           <section className="rounded-[22px] border border-[#d7e1dd] bg-[#f8fbf9] p-4 sm:p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <h2 className="font-serif text-2xl tracking-[-0.04em] text-[#172523]">Passport stamps</h2>
-              <button
-                onClick={() => { setAddingCourse((current) => !current); setNewCourseTitle(""); }}
-                className="shrink-0 rounded-[10px] border border-[#cfdad6] bg-white px-3 py-2 text-xs font-semibold text-[#344743] hover:bg-[#eaf5f1]"
-              >
-                + Add course
-              </button>
             </div>
-            {addingCourse && (
-              <form onSubmit={addCourse} className="mb-4 flex gap-2">
-                <input
-                  autoFocus
-                  required
-                  value={newCourseTitle}
-                  onChange={(event) => setNewCourseTitle(event.target.value)}
-                  aria-label="Course title"
-                  placeholder="Course title"
-                  className="h-9 min-w-0 flex-1 rounded-[9px] border border-[#cfdad6] bg-white px-3 text-xs outline-none focus:border-[#1ca5a0]"
-                />
-                <button className="rounded-[9px] bg-[#1aa6a1] px-3 text-xs font-semibold text-white">Add</button>
-              </form>
+            {passportPersonId === selectedPerson.id && passportLoading && (
+              <p role="status" className="mb-3 rounded-[12px] bg-white px-4 py-3 text-xs text-[#61726e]">
+                Loading CSG and HCA course records…
+              </p>
             )}
+            {passportPersonId === selectedPerson.id && passportError && (
+              <p role="alert" className="mb-3 rounded-[12px] border border-[#edc9c9] bg-[#fff4f3] px-4 py-3 text-xs text-[#a94856]">
+                {passportError}
+              </p>
+            )}
+            <form
+              onSubmit={assignHcaCourse}
+              className="mb-4 grid gap-2 rounded-[12px] border border-[#e1e9e5] bg-white p-3 sm:grid-cols-[1fr_150px_145px_auto]"
+            >
+              <input
+                required
+                value={hcaCourseTitle}
+                onChange={(event) => setHcaCourseTitle(event.target.value)}
+                aria-label="HCA course name"
+                placeholder="Assign an HCA course"
+                className="h-9 min-w-0 rounded-[9px] border border-[#cfdad6] px-3 text-xs"
+              />
+              <select
+                value={hcaTeam}
+                onChange={(event) =>
+                  setHcaTeam(event.target.value === "associated" ? "associated" : "bon")
+                }
+                aria-label="Employee group"
+                className="h-9 rounded-[9px] border border-[#cfdad6] bg-white px-2 text-xs"
+              >
+                <option value="bon">BON Team</option>
+                <option value="associated">Associated Company</option>
+              </select>
+              <input
+                type="month"
+                required
+                value={hcaMonth}
+                onChange={(event) => setHcaMonth(event.target.value)}
+                aria-label="HCA course month"
+                className="h-9 rounded-[9px] border border-[#cfdad6] px-2 text-xs"
+              />
+              <button
+                type="submit"
+                disabled={assigningHcaCourse}
+                className="h-9 rounded-[9px] bg-[#1a7771] px-3 text-xs font-semibold text-white disabled:opacity-50"
+              >
+                {assigningHcaCourse ? "Assigning…" : "Assign HCA"}
+              </button>
+            </form>
+            {assignmentError && (
+              <p role="alert" className="mb-3 text-xs text-[#a94856]">{assignmentError}</p>
+            )}
+            {notice && <p role="status" className="mb-3 text-xs text-[#147e78]">{notice}</p>}
             {(category === "All" || category === "OTA") &&
               sellabilityPersonId === selectedPerson.id &&
               sellabilityLoading && (
@@ -999,7 +1311,11 @@ function PeopleView() {
                         </div>
                         <h3 className="mt-2 line-clamp-2 min-h-8 text-[11px] font-medium leading-4 text-[#283a36]">{course.title}</h3>
                         <p className="mt-1 text-[10px] text-[#71807c]">
-                          {course.date ? formatDate(course.date) : "—"}
+                          {course.date
+                            ? course.type === "CSG" && /^\d{1,2}\/\d{2}$/.test(course.date)
+                              ? course.date
+                              : formatDate(course.date)
+                            : "—"}
                         </p>
                         <p className="mt-0.5 min-h-7 text-[9px] font-medium uppercase leading-3 tracking-wide text-[#71807c]">
                           {course.status === "Confirmed" ? "Confirmed" : course.status}
@@ -1016,30 +1332,31 @@ function PeopleView() {
                               Open course
                             </a>
                             )
-                          ) : (
+                          ) : typeof course.id === "string" &&
+                            (course.id.startsWith("csg|") || course.id.startsWith("hca|")) ? (
                             <>
-                            <button
-                              onClick={() => updateSelectedPerson((person) => ({
-                                ...person,
-                                courses: person.courses.filter((item) => item.id !== course.id),
-                              }))}
-                              className="rounded-[7px] border border-[#d8e1de] bg-white px-2 py-1 text-[9px] text-[#61726e] hover:bg-[#eff4f1]"
-                            >
-                              Revoke
-                            </button>
-                            {course.status === "Awaiting confirmation" && (
+                              {course.type === "CSG" && course.status !== "Confirmed" && (
+                                <input
+                                  type="month"
+                                  aria-label={`Completion month for ${course.title}`}
+                                  value={completionMonth}
+                                  onChange={(event) => setCompletionMonth(event.target.value)}
+                                  className="h-7 w-[116px] rounded-[7px] border border-[#d8e1de] px-1 text-[9px]"
+                                />
+                              )}
                               <button
-                                onClick={() => updateSelectedPerson((person) => ({
-                                  ...person,
-                                  courses: person.courses.map((item) => item.id === course.id ? { ...item, status: "Confirmed" } : item),
-                                }))}
-                                className="rounded-[7px] bg-[#1a7771] px-2 py-1 text-[9px] font-semibold text-white hover:bg-[#12635e]"
+                                disabled={savingCourseId === course.id}
+                                onClick={() => void setPassportCourseStatus(course, course.status !== "Confirmed")}
+                                className="rounded-[7px] bg-[#1a7771] px-2 py-1 text-[9px] font-semibold text-white hover:bg-[#12635e] disabled:opacity-50"
                               >
-                                Confirm
+                                {savingCourseId === course.id
+                                  ? "Saving…"
+                                  : course.status === "Confirmed"
+                                    ? "Reopen"
+                                    : "Mark complete"}
                               </button>
-                            )}
                             </>
-                          )}
+                          ) : null}
                         </div>
                       </article>
                     ))}
@@ -1193,7 +1510,11 @@ function ReportingView() {
     })
     .sort((a, b) => b.checkedInAt.localeCompare(a.checkedInAt));
 
-  const uniqueEmployees = new Set(filteredEntries.map((entry) => entry.email.toLowerCase())).size;
+  const uniqueEmployees = new Set(
+    filteredEntries.map((entry) =>
+      entry.email.trim().toLowerCase() || `name:${entry.name.trim().toLowerCase()}`,
+    ),
+  ).size;
   const categorySummary = Array.from(
     filteredEntries.reduce((summary, entry) => {
       const category = entry.category || "Uncategorized";
@@ -1329,7 +1650,7 @@ function ReportingView() {
                   <span>{entry.category || "—"}</span>
                   <span>{entry.training}</span>
                   <span>{entry.name}</span>
-                  <span>{entry.email}</span>
+                  <span>{entry.email || "—"}</span>
                 </div>
               ))}
               {!isLoading && filteredEntries.length === 0 && (
@@ -1345,17 +1666,85 @@ function ReportingView() {
 
 export default function AdminContent({ adminName }: { adminName: string }) {
   const [activeSection, setActiveSection] = useState<AdminSection>("Overview");
-  const [trainings, setTrainings] = useState(initialTrainings);
+  const [trainings, setTrainings] = useState<Training[]>([]);
+  const [trainingLoading, setTrainingLoading] = useState(true);
+  const [trainingLoadError, setTrainingLoadError] = useState<string | null>(null);
+  const [trainingSubmitError, setTrainingSubmitError] = useState<string | null>(null);
 
-  function createTraining(training: Omit<Training, "id">) {
-    setTrainings((current) => [...current, {
-      ...training,
-      id: Date.now(),
-      bonAttendees: 0,
-      attendeeType: "Employee",
-      checkIns: 0,
-    }]);
-    setActiveSection("Trainings");
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTrainings() {
+      try {
+        const response = await fetch("/api/admin/trainings", { cache: "no-store" });
+        const result: unknown = await response.json();
+        if (!response.ok) {
+          throw new Error(
+            isRecord(result) && typeof result.error === "string"
+              ? result.error
+              : "Unable to load training data.",
+          );
+        }
+        if (!Array.isArray(result) || !result.every(isTrainingRecord)) {
+          throw new Error("Training data returned an invalid response.");
+        }
+        if (!cancelled) {
+          setTrainings(result);
+          setTrainingLoadError(null);
+        }
+      } catch (error) {
+        console.error("Admin training lookup failed:", error);
+        if (!cancelled) {
+          setTrainingLoadError(
+            error instanceof Error ? error.message : "Unable to load training data.",
+          );
+        }
+      } finally {
+        if (!cancelled) setTrainingLoading(false);
+      }
+    }
+
+    void loadTrainings();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function createTraining(
+    training: Omit<Training, "id">,
+    requestId: string,
+  ): Promise<boolean> {
+    setTrainingSubmitError(null);
+    try {
+      const response = await fetch("/api/admin/trainings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...training, requestId }),
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          isRecord(result) && typeof result.error === "string"
+            ? result.error
+            : "Unable to save training.",
+        );
+      }
+      const savedTraining = isRecord(result) ? result.training : undefined;
+      if (!isTrainingRecord(savedTraining)) {
+        throw new Error("Training was saved, but the server returned invalid data.");
+      }
+      setTrainings((current) =>
+        [...current.filter((item) => item.id !== savedTraining.id), savedTraining]
+          .sort((left, right) => left.date.localeCompare(right.date)),
+      );
+      setActiveSection("Trainings");
+      return true;
+    } catch (error) {
+      console.error("Admin training save failed:", error);
+      const message = error instanceof Error ? error.message : "Unable to save training.";
+      setTrainingSubmitError(message);
+      return false;
+    }
   }
 
   return (
@@ -1396,17 +1785,27 @@ export default function AdminContent({ adminName }: { adminName: string }) {
         {activeSection !== "People & TIP" &&
           activeSection !== "Reporting" &&
           activeSection !== "Sellability Courses" && (
-          <div className="mb-8 flex items-start gap-3 rounded-[16px] border border-[#bddbd4] bg-[#e5f3ed] px-4 py-3 text-sm text-[#3d6258]">
-            <span className="mt-0.5 font-bold" aria-hidden="true">i</span>
-            <p><strong>Preview data.</strong> Sample records are shown for layout review. Changes made here are temporary and won’t be saved.</p>
-          </div>
-        )}
+            <div className="mb-6">
+              {trainingLoading && (
+                <p role="status" className="rounded-[14px] border border-[#d7e1dd] bg-white px-4 py-3 text-sm text-[#536663]">
+                  Loading training data from Google Sheets…
+                </p>
+              )}
+              {trainingLoadError && (
+                <p role="alert" className="rounded-[14px] border border-[#edc9c9] bg-[#fff4f3] px-4 py-3 text-sm text-[#a94856]">
+                  {trainingLoadError}
+                </p>
+              )}
+            </div>
+          )}
 
         {activeSection === "Overview" && <Overview trainings={trainings} onNavigate={setActiveSection} />}
         {activeSection === "Trainings" && (
           <TrainingLog trainings={trainings} onStart={() => setActiveSection("Start training")} />
         )}
-        {activeSection === "Start training" && <TrainingForm onCreate={createTraining} />}
+        {activeSection === "Start training" && (
+          <TrainingForm onCreate={createTraining} submitError={trainingSubmitError} />
+        )}
         {activeSection === "People & TIP" && <PeopleView />}
         {activeSection === "Reporting" && <ReportingView />}
         {activeSection === "Sellability Courses" && <SellabilityEnrollments />}

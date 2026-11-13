@@ -1,10 +1,11 @@
-import { google } from "googleapis";
 import { NextResponse } from "next/server";
 import {
-  createGoogleOAuthClient,
-  GoogleOAuthConfigurationError,
-} from "@/lib/google";
+  getGoogleSheetsClient,
+  GoogleSheetsConfigurationError,
+} from "@/lib/google-sheets";
 import { isTrainingCategory } from "@/lib/attendance";
+
+export const runtime = "nodejs";
 
 type CheckInPayload = {
   name: string;
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const sheets = google.sheets({ version: "v4", auth: createGoogleOAuthClient() });
+    const sheets = getGoogleSheetsClient();
     const escapedSheetName = sheetName.replaceAll("'", "''");
 
     await sheets.spreadsheets.values.append({
@@ -81,7 +82,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    if (error instanceof GoogleOAuthConfigurationError) {
+    if (error instanceof GoogleSheetsConfigurationError) {
       console.error("Attendance logging is not configured:", error.message);
       return NextResponse.json(
         { error: "Attendance logging is not configured." },

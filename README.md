@@ -29,10 +29,16 @@ visitors can sign in with their BON Google account and reach the training
 portal. Approved administrators see an **Admin view** option in the portal to
 open `/admin`; the admin header's **Personal view** option returns to `/`.
 
-Most admin sections currently use clearly labeled preview data. Trainings
-added from the form are temporary and are not persisted. The Reporting section
-loads actual attendance entries from the configured Google Sheet, with
-date-filtered summaries and CSV export.
+The admin Overview and Trainings sections load scheduled sessions from the
+configured Google Sheets. Creating a training writes it to the BON Training
+Progress Tracker and, for TTT and LF sessions, to their designated schedule
+tabs. People & TIP loads CSG and HCA course records from the course trackers;
+admins can update completion checkboxes/dates and assign HCA courses. TTT
+attendance can be updated from a training row, including additional attendees,
+and those attendance changes update the matching BON weekly TTT tally.
+Reporting combines check-ins with recorded TTT attendance. Other People & TIP
+data, such as training goals and some profile details, remains local to the
+admin browser.
 
 ## Employee check-in
 
@@ -48,13 +54,44 @@ Academy.
 
 Set `GOOGLE_REFRESH_TOKEN` and `GOOGLE_SHEETS_SPREADSHEET_ID` in `.env.local`
 and in Vercel. Generate the refresh token for the same OAuth client as
-`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, granting both the Google
-Workspace directory read-only scope
-(`https://www.googleapis.com/auth/directory.readonly`) and the Sheets scope
-(`https://www.googleapis.com/auth/spreadsheets`). The OAuth account needs
-permission to search the domain directory and edit the selected spreadsheet.
-Keep the refresh token and spreadsheet ID server-side; never expose them in
-client code.
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, granting the Google Workspace
+directory read-only scope
+(`https://www.googleapis.com/auth/directory.readonly`). This OAuth account is
+used for employee directory search.
+
+### Admin Google Sheets integration
+
+Enable the Google Sheets API, create a service account, and share each
+spreadsheet below with its service-account email as an Editor. Store the
+service account JSON key as `GOOGLE_SERVICE_ACCOUNT_JSON` in `.env.local` and
+as a server-side Vercel environment variable; do not commit the key or expose it
+to client code. Configure the IDs for all four sheets using the corresponding
+`GOOGLE_SHEETS_*_ID` variables in `.env.example`. Also share the configured
+attendance spreadsheet (`GOOGLE_SHEETS_SPREADSHEET_ID`) with the service
+account so check-in and attendance reporting continue to work.
+
+The admin training API reads the BON `Training Schedule`, `TTT`, and `LF` tabs
+and the TTT `Schedule` and `Upcoming TTT` tabs. New records receive a hidden
+`Session UUID` column where needed. TTT and LF creations are written to the
+corresponding category tabs as well as the BON `Training Schedule`. Writes to
+multiple Google Sheets are not transactional; if a fan-out write fails, the
+admin API reports which destinations succeeded, and retrying the same form
+submission uses its stable UUID to avoid duplicate rows.
+
+The employee passport finds records by normalized full name because the
+trackers do not yet have employee email values populated. CSG completion dates
+are stored as `M/YY`, as required by that sheet's layout. HCA assignments use
+an existing blank row in the selected month section. TTT attendance matching
+uses the session title/date and roster name; it updates the weekly TTT count
+from checked attendance rows, so retries recalculate the count rather than
+incrementing it twice. A matching session block must already exist in the
+stacked TTT attendance tab; creating new block layouts automatically is not
+supported. CSG and HCA completion edits do not yet fan out to BON weekly
+counts because their tracker dates only retain month/year, which is not enough
+to determine a weekly column reliably.
+
+The Reporting section reads attendance entries from the configured Google
+Sheet, with date-filtered summaries and CSV export.
 
 ## Moodle courses
 
@@ -80,9 +117,12 @@ enrollment student and course IDs and returns pages of 100 using Sellability's
 details are cached daily and student details hourly. The admin view supports
 page navigation, on-page student search, course and status filters, and CSV
 export of the filtered results, including enrollment dates and course IDs.
-Course links open the Sellability management page and require appropriate
-Sellability access. Summary metrics are for the current page because the
-Sellability total-count response is not available.
+Rows are sorted newest-first by enrollment date, with undated enrollments last.
+Enrollment and completion date ranges, like search and other filters, apply to
+the currently loaded 100-record page. Course links open the Sellability
+management page and require appropriate Sellability access. Summary metrics
+are for the current page because the Sellability total-count response is not
+available.
 
 The **People & TIP** passport looks up the selected sample roster name as an
 exact match in the Google Workspace directory, then loads that employee's

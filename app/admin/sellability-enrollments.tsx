@@ -62,6 +62,12 @@ function formatDate(value: string | null): string {
   }).format(date);
 }
 
+function dateOnly(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
 function downloadCsv(enrollments: Enrollment[]) {
   const columns: Array<[string, (enrollment: Enrollment) => string]> = [
     ["Student Name", (enrollment) => enrollment.studentName],
@@ -125,6 +131,10 @@ export default function SellabilityEnrollments() {
   const [search, setSearch] = useState("");
   const [courseFilter, setCourseFilter] = useState("All Courses");
   const [statusFilter, setStatusFilter] = useState<(typeof statuses)[number]>("All");
+  const [enrolledFrom, setEnrolledFrom] = useState("");
+  const [enrolledTo, setEnrolledTo] = useState("");
+  const [completedFrom, setCompletedFrom] = useState("");
+  const [completedTo, setCompletedTo] = useState("");
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
 
@@ -194,18 +204,48 @@ export default function SellabilityEnrollments() {
   );
   const filteredEnrollments = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return enrollments.filter((enrollment) => {
-      const matchesSearch =
-        !query ||
-        enrollment.studentName.toLowerCase().includes(query) ||
-        enrollment.studentEmail.toLowerCase().includes(query);
-      const matchesCourse =
-        courseFilter === "All Courses" || enrollment.courseTitle === courseFilter;
-      const matchesStatus =
-        statusFilter === "All" || enrollment.status === statusFilter;
-      return matchesSearch && matchesCourse && matchesStatus;
-    });
-  }, [courseFilter, enrollments, search, statusFilter]);
+    const inDateRange = (value: string | null, from: string, to: string) => {
+      const date = dateOnly(value);
+      if (!from && !to) return true;
+      if (!date) return false;
+      return (!from || date >= from) && (!to || date <= to);
+    };
+
+    return enrollments
+      .filter((enrollment) => {
+        const matchesSearch =
+          !query ||
+          enrollment.studentName.toLowerCase().includes(query) ||
+          enrollment.studentEmail.toLowerCase().includes(query);
+        const matchesCourse =
+          courseFilter === "All Courses" || enrollment.courseTitle === courseFilter;
+        const matchesStatus =
+          statusFilter === "All" || enrollment.status === statusFilter;
+        return (
+          matchesSearch &&
+          matchesCourse &&
+          matchesStatus &&
+          inDateRange(enrollment.enrolledAt, enrolledFrom, enrolledTo) &&
+          inDateRange(enrollment.completedAt, completedFrom, completedTo)
+        );
+      })
+      .sort((left, right) => {
+        const leftDate = dateOnly(left.enrolledAt);
+        const rightDate = dateOnly(right.enrolledAt);
+        if (!leftDate) return rightDate ? 1 : 0;
+        if (!rightDate) return -1;
+        return rightDate.localeCompare(leftDate);
+      });
+  }, [
+    completedFrom,
+    completedTo,
+    courseFilter,
+    enrolledFrom,
+    enrolledTo,
+    enrollments,
+    search,
+    statusFilter,
+  ]);
 
   const totalStudents = new Set(
     enrollments.map((enrollment) => enrollment.studentEmail.toLowerCase()),
@@ -232,7 +272,7 @@ export default function SellabilityEnrollments() {
               Training enrollments
             </h1>
             <p className="mt-3 text-[#5b6d69]">
-              Review student progress across Sellability courses.
+              Review student progress across Sellability courses. Sorted by enrollment date, newest first; filters apply to this page.
             </p>
           </div>
           <button
@@ -296,6 +336,84 @@ export default function SellabilityEnrollments() {
             ))}
           </select>
         </label>
+      </section>
+
+      <section
+        aria-label="Filter by enrollment and completion dates"
+        className="grid gap-4 rounded-2xl border border-[#d7e1dd] bg-[#f8fbf9] p-4 sm:grid-cols-2"
+      >
+        <fieldset className="grid gap-2">
+          <legend className="mb-1 text-xs font-semibold text-[#536663]">Enrollment date</legend>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-[11px] text-[#71807c]">
+              From
+              <input
+                type="date"
+                aria-label="Enrollment date from"
+                value={enrolledFrom}
+                max={enrolledTo || undefined}
+                onChange={(event) => setEnrolledFrom(event.target.value)}
+                className="mt-1 h-10 w-full rounded-xl border border-[#cfdad6] bg-white px-3 text-sm text-[#344743] outline-none focus:border-[#1b8076]"
+              />
+            </label>
+            <label className="text-[11px] text-[#71807c]">
+              To
+              <input
+                type="date"
+                aria-label="Enrollment date to"
+                value={enrolledTo}
+                min={enrolledFrom || undefined}
+                onChange={(event) => setEnrolledTo(event.target.value)}
+                className="mt-1 h-10 w-full rounded-xl border border-[#cfdad6] bg-white px-3 text-sm text-[#344743] outline-none focus:border-[#1b8076]"
+              />
+            </label>
+          </div>
+        </fieldset>
+        <fieldset className="grid gap-2">
+          <legend className="mb-1 text-xs font-semibold text-[#536663]">Completion date</legend>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-[11px] text-[#71807c]">
+              From
+              <input
+                type="date"
+                aria-label="Completion date from"
+                value={completedFrom}
+                max={completedTo || undefined}
+                onChange={(event) => setCompletedFrom(event.target.value)}
+                className="mt-1 h-10 w-full rounded-xl border border-[#cfdad6] bg-white px-3 text-sm text-[#344743] outline-none focus:border-[#1b8076]"
+              />
+            </label>
+            <label className="text-[11px] text-[#71807c]">
+              To
+              <input
+                type="date"
+                aria-label="Completion date to"
+                value={completedTo}
+                min={completedFrom || undefined}
+                onChange={(event) => setCompletedTo(event.target.value)}
+                className="mt-1 h-10 w-full rounded-xl border border-[#cfdad6] bg-white px-3 text-sm text-[#344743] outline-none focus:border-[#1b8076]"
+              />
+            </label>
+          </div>
+        </fieldset>
+        <div className="flex items-center justify-between gap-3 sm:col-span-2">
+          <p className="text-xs text-[#71807c]">
+            Date filters apply to the currently loaded page.
+          </p>
+          <button
+            type="button"
+            disabled={!enrolledFrom && !enrolledTo && !completedFrom && !completedTo}
+            onClick={() => {
+              setEnrolledFrom("");
+              setEnrolledTo("");
+              setCompletedFrom("");
+              setCompletedTo("");
+            }}
+            className="rounded-full border border-[#b8d5ce] px-3 py-1.5 text-xs font-semibold text-[#1b8076] hover:bg-[#eaf5f1] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Clear date filters
+          </button>
+        </div>
       </section>
 
       <section className="overflow-hidden rounded-2xl border border-[#d7e1dd] bg-white">
