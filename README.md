@@ -71,12 +71,15 @@ attendance spreadsheet (`GOOGLE_SHEETS_SPREADSHEET_ID`) with the service
 account so check-in and attendance reporting continue to work.
 
 The admin training API reads the BON `Training Schedule`, `TTT`, and `LF` tabs
-and the TTT `Schedule` and `Upcoming TTT` tabs. New records receive a hidden
-`Session UUID` column where needed. TTT and LF creations are written to the
-corresponding category tabs as well as the BON `Training Schedule`. Writes to
-multiple Google Sheets are not transactional; if a fan-out write fails, the
-admin API reports which destinations succeeded, and retrying the same form
-submission uses its stable UUID to avoid duplicate rows.
+and the TTT `Schedule` and `Upcoming TTT` tabs. The formatted TTT `Schedule`
+tab is read and updated in its side-by-side 2025/2026 date-and-title sections;
+hidden UUID columns keep dashboard writes idempotent without changing the
+visible layout. Other new records receive a hidden `Session UUID` column where
+needed. TTT and LF creations are written to the corresponding category tabs
+as well as the BON `Training Schedule`. Writes to multiple Google Sheets are
+not transactional; if a fan-out write fails, the admin API reports which
+destinations succeeded, and retrying the same form submission uses its stable
+UUID to avoid duplicate rows.
 
 The employee passport finds records by normalized full name and backfills
 employee email metadata when an unambiguous directory match is available.
