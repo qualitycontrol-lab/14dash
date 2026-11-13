@@ -5,6 +5,7 @@ import {
   appendRecordIfMissing,
   ensureIdColumn,
   ensureHiddenColumns,
+  ensureSheetTab,
   findHeaderIndex,
   columnLetter,
   getGoogleSheetsClient,
@@ -30,8 +31,27 @@ type Training = {
   title: string;
   type: TrainingType;
   date: string;
+  endDate?: string;
+  trainer?: string;
   attendees: number;
   status: TrainingStatus;
+};
+type NewTraining = {
+  title: string;
+  date: string;
+  endDate?: string;
+    trainer?: string;
+  type: TrainingType;
+  requestId: string;
+};
+
+type TrainingScheduleSection = {
+  year: number;
+  yearRow: number;
+  headerRow: number;
+  startRow: number;
+  endRow: number;
+  columns: Array<{ type: TrainingType; column: number }>;
 };
 
 type TttScheduleSection = {
@@ -45,6 +65,8 @@ const TTT_SCHEDULE_UUID_HEADERS = [
   "2025 TTT Session UUID",
   "2026 TTT Session UUID",
 ];
+const ADMIN_SCHEDULE_TAB = "Admin Training Schedule";
+const ADMIN_SCHEDULE_HEADERS = ["Training", "Date", "End Date", "Type", "Trainer"];
 
 const typeNames: Record<TrainingType, string[]> = {
   HCA: ["HCA", "Hubbard College of Administration"],
@@ -175,6 +197,268 @@ function parseTttMasterSchedule(values: string[][]): Training[] {
   return trainings;
 }
 
+function findTrainingScheduleSections(values: string[][]): TrainingScheduleSection[] {
+  const sections: Array<Omit<TrainingScheduleSection, "endRow">> = [];
+  for (let yearRow = 0; yearRow < values.length; yearRow += 1) {
+    const row = values[yearRow] ?? [];
+    const yearCell = row.find((cell) => /^20\d{2}\s+Training Schedule$/i.test(cell.trim()));
+    if (!yearCell) continue;
+
+    const year = Number(/^(\d{4})/.exec(yearCell)?.[1]);
+    const headerRow = yearRow + 1;
+    const headers = values[headerRow] ?? [];
+    const columns = headers.flatMap((header, column) => {
+      const type = parseType(header);
+      return type === "CSG" || type === "LF" || type === "TTT"
+        ? [{ type, column }]
+        : [];
+    });
+    if (!columns.length) {
+      throw new GoogleSheetsDataError(
+        `The ${year} Training Schedule section has no CSG, Learning Forum, or Train the Trainer headers.`,
+      );
+    }
+    sections.push({ year, yearRow, headerRow, startRow: headerRow + 1, columns });
+  }
+
+  return sections.map((section, index) => ({
+    ...section,
+    endRow: sections[index + 1]?.yearRow ?? values.length,
+  }));
+}
+
+function parseProgressScheduleCell(
+  value: string,
+  year: number,
+): { date: string; endDate?: string; trainer?: string } | null {
+  const monthNames =
+    "January|February|March|April|May|June|July|August|September|October|November|December";
+  const datePattern = new RegExp(
+    `^(${monthNames})\\s*(?:-\\s*|\\s+)(\\d{1,2})(?:\\s*-\\s*(?:(${monthNames})\\s*)?(\\d{1,2}))?(?:\\s*-\\s*(.*))?$`,
+    "i",
+  );
+  const match = datePattern.exec(value.trim());
+  if (!match) return null;
+
+  const startMonth = new Date(`${match[1]} 1, ${year} UTC`).getUTCMonth();
+  const startDay = Number(match[2]);
+  const start = new Date(Date.UTC(year, startMonth, startDay));
+  if (
+    Number.isNaN(start.getTime()) ||
+    start.getUTCMonth() !== startMonth ||
+    start.getUTCDate() !== startDay
+  ) {
+    return null;
+  }
+
+  let endDate: string | undefined;
+  if (match[4]) {
+    const endMonth = match[3]
+      ? new Date(`${match[3]} 1, ${year} UTC`).getUTCMonth()
+      : startMonth;
+    const endDay = Number(match[4]);
+    const endYear = endMonth < startMonth ? year + 1 : year;
+    const end = new Date(Date.UTC(endYear, endMonth, endDay));
+    if (
+      Number.isNaN(end.getTime()) ||
+      end.getUTCMonth() !== endMonth ||
+      end.getUTCDate() !== endDay ||
+      end.getTime() < start.getTime()
+    ) {
+      return null;
+    }
+    endDate = end.toISOString().slice(0, 10);
+  }
+
+  const trainer = match[5]?.trim();
+  return {
+    date: start.toISOString().slice(0, 10),
+    ...(endDate && endDate !== start.toISOString().slice(0, 10) ? { endDate } : {}),
+    ...(trainer && trainer !== "?" ? { trainer } : {}),
+  };
+}
+
+function parseTrainingProgressSchedule(values: string[][]): Training[] {
+  const sections = findTrainingScheduleSections(values);
+  if (!sections.length) {
+    throw new GoogleSheetsDataError(
+      'The "Training Schedule" tab has no year sections with category headers.',
+    );
+  }
+
+  const trainings: Training[] = [];
+  const today = new Date().toISOString().slice(0, 10);
+  for (const section of sections) {
+    for (const { type, column } of section.columns) {
+      for (let rowIndex = section.startRow; rowIndex < section.endRow; rowIndex += 1) {
+        const cell = values[rowIndex]?.[column] ?? "";
+        const parsed = parseProgressScheduleCell(cell, section.year);
+        if (!parsed) continue;
+
+        const title =
+          type === "CSG"
+            ? "Center for Self Governance"
+            : type === "LF"
+              ? "Learning Forum"
+              : "Train the Trainer";
+        const effectiveEndDate = parsed.endDate ?? parsed.date;
+        trainings.push({
+          id: `Training Schedule-${section.year}-${rowIndex + 1}-${column}`,
+          title,
+          type,
+          date: parsed.date,
+          ...(parsed.endDate ? { endDate: parsed.endDate } : {}),
+          ...(type === "LF" && parsed.trainer ? { trainer: parsed.trainer } : {}),
+          attendees: 0,
+          status: effectiveEndDate < today ? "Completed" : "Upcoming",
+        });
+      }
+    }
+  }
+  return trainings;
+}
+
+function formatProgressScheduleDate(
+  date: string,
+  endDate?: string,
+  trainer?: string,
+): string {
+  const start = new Date(`${date}T00:00:00Z`);
+  const startMonth = new Intl.DateTimeFormat("en", {
+    month: "long",
+    timeZone: "UTC",
+  }).format(start);
+  let formattedDate = `${startMonth} - ${start.getUTCDate()}`;
+  if (endDate) {
+    const end = new Date(`${endDate}T00:00:00Z`);
+    const endMonth = new Intl.DateTimeFormat("en", {
+      month: "long",
+      timeZone: "UTC",
+    }).format(end);
+    formattedDate = startMonth === endMonth
+      ? `${startMonth} - ${start.getUTCDate()} - ${end.getUTCDate()}`
+      : `${startMonth} - ${start.getUTCDate()} - ${endMonth} ${end.getUTCDate()}`;
+  }
+  return trainer ? `${formattedDate} - ${trainer}` : formattedDate;
+}
+
+async function writeTrainingProgressScheduleDate(record: NewTraining): Promise<void> {
+  if (record.type !== "CSG" && record.type !== "LF" && record.type !== "TTT") return;
+
+  const year = Number(record.date.slice(0, 4));
+  const spreadsheetId = getSpreadsheetId("trainingProgress");
+  const range = `${quoteSheetName("Training Schedule")}!A:ZZ`;
+  const values = await readSheetValues(spreadsheetId, range);
+  const sections = findTrainingScheduleSections(values);
+  const section = sections.find((candidate) => candidate.year === year);
+  if (!section) return;
+  const scheduleColumn = section?.columns.find(({ type }) => type === record.type)?.column;
+  if (scheduleColumn === undefined) {
+    throw new GoogleSheetsDataError(
+      `The Training Schedule tab has no ${year} ${record.type} column.`,
+    );
+  }
+
+  for (let rowIndex = section.startRow; rowIndex < section.endRow; rowIndex += 1) {
+    const existing = parseProgressScheduleCell(values[rowIndex]?.[scheduleColumn] ?? "", year);
+    if (!existing) continue;
+    const existingEnd = existing.endDate ?? existing.date;
+    const recordEnd = record.endDate ?? record.date;
+    if (existing.date <= recordEnd && record.date <= existingEnd) return;
+  }
+
+  let targetRow = values.findIndex((row, rowIndex) =>
+    rowIndex >= section.startRow &&
+    rowIndex < section.endRow &&
+    !(row[scheduleColumn] ?? "").trim(),
+  );
+  let needsInsert = false;
+  if (targetRow < 0) {
+    targetRow = section.endRow;
+    needsInsert = sections.some((candidate) => candidate.yearRow === targetRow);
+  }
+
+  const sourceRow = values.reduce(
+    (last, row, rowIndex) =>
+      rowIndex >= section.startRow &&
+      rowIndex < section.endRow &&
+      section.columns.some(({ column }) => (row[column] ?? "").trim())
+        ? rowIndex
+        : last,
+    section.headerRow + 1,
+  );
+  const metadata = await getGoogleSheetsClient().spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets(properties(sheetId,title))",
+  });
+  const sheetId = metadata.data.sheets
+    ?.map((sheet) => sheet.properties)
+    .find((sheet) => sheet?.title === "Training Schedule")
+    ?.sheetId;
+  if (sheetId === undefined) {
+    throw new GoogleSheetsDataError('The "Training Schedule" tab was not found.');
+  }
+
+  if (needsInsert) {
+    await getGoogleSheetsClient().spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{
+          insertDimension: {
+            range: {
+              sheetId,
+              dimension: "ROWS",
+              startIndex: targetRow,
+              endIndex: targetRow + 1,
+            },
+            inheritFromBefore: true,
+          },
+        }],
+      },
+    });
+  }
+  if (sourceRow !== targetRow) {
+    await getGoogleSheetsClient().spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{
+          copyPaste: {
+            source: {
+              sheetId,
+              startRowIndex: sourceRow,
+              endRowIndex: sourceRow + 1,
+              startColumnIndex: 0,
+              endColumnIndex: 3,
+            },
+            destination: {
+              sheetId,
+              startRowIndex: targetRow,
+              endRowIndex: targetRow + 1,
+              startColumnIndex: 0,
+              endColumnIndex: 3,
+            },
+            pasteType: "PASTE_FORMAT",
+            pasteOrientation: "NORMAL",
+          },
+        }],
+      },
+    });
+  }
+
+  await getGoogleSheetsClient().spreadsheets.values.update({
+    spreadsheetId,
+    range: `${quoteSheetName("Training Schedule")}!${columnLetter(scheduleColumn)}${targetRow + 1}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[formatProgressScheduleDate(
+        record.date,
+        record.type === "CSG" ? record.endDate : undefined,
+        record.type === "LF" ? record.trainer : undefined,
+      )]],
+    },
+  });
+}
+
 function parseTable(
   table: SheetTable,
   sheetName: string,
@@ -194,6 +478,8 @@ function parseTable(
   return table.rows.flatMap((row, index) => {
     const title = readCell(table.headers, row, titleAliases);
     const date = parseDate(readCell(table.headers, row, dateAliases));
+    const rawEndDate = readCell(table.headers, row, ["end date", "ending date"]);
+    const endDate = rawEndDate ? parseDate(rawEndDate) : "";
     const type = parseType(
       readCell(table.headers, row, ["training type", "category", "type"]),
       fallbackType,
@@ -205,16 +491,20 @@ function parseTable(
       readCell(table.headers, row, ["attendees", "attendee count", "total attendees"]),
     );
     const statusValue = readCell(table.headers, row, ["status"]).toLowerCase();
+    const effectiveEndDate = endDate >= date ? endDate : date;
     const status: TrainingStatus =
-      statusValue === "completed" || date < new Date().toISOString().slice(0, 10)
+      statusValue === "completed" || effectiveEndDate < new Date().toISOString().slice(0, 10)
         ? "Completed"
         : "Upcoming";
+    const trainer = readCell(table.headers, row, ["trainer", "instructor", "facilitator"]);
 
     return [{
       id: storedId || `${sheetName}-${index + 2}`,
       title,
       type,
       date,
+      ...(endDate && endDate >= date ? { endDate } : {}),
+      ...(trainer ? { trainer } : {}),
       attendees: Number.isFinite(attendeeCount) ? attendeeCount : 0,
       status,
     }];
@@ -233,7 +523,7 @@ function deduplicateTrainings(trainings: Training[]): Training[] {
 
 function trainingRow(
   table: SheetTable,
-  training: { title: string; date: string; type: TrainingType; requestId: string },
+  training: NewTraining,
   fallbackType?: TrainingType,
 ): string[] {
   const titleIndex = findHeaderIndex(table.headers, [
@@ -249,10 +539,14 @@ function trainingRow(
   }
 
   const typeIndex = findHeaderIndex(table.headers, ["training type", "category", "type"]);
+  const endDateIndex = findHeaderIndex(table.headers, ["end date", "ending date"]);
+  const trainerIndex = findHeaderIndex(table.headers, ["trainer", "instructor", "facilitator"]);
   const idIndex = table.idColumn;
   const row = table.headers.map(() => "");
   row[titleIndex] = training.title;
   row[dateIndex] = training.date;
+  if (endDateIndex >= 0 && training.endDate) row[endDateIndex] = training.endDate;
+  if (trainerIndex >= 0 && training.trainer) row[trainerIndex] = training.trainer;
   if (typeIndex >= 0) row[typeIndex] = typeNames[training.type][0];
   if (idIndex >= 0) row[idIndex] = training.requestId;
   if (!fallbackType && typeIndex < 0) {
@@ -266,7 +560,7 @@ function trainingRow(
 async function appendTraining(
   spreadsheet: AdminSpreadsheet,
   tab: string,
-  record: { title: string; date: string; type: TrainingType; requestId: string },
+  record: NewTraining,
   fallbackType?: TrainingType,
 ) {
   const spreadsheetId = getSpreadsheetId(spreadsheet);
@@ -652,7 +946,14 @@ function isTrainingType(value: unknown): value is TrainingType {
 
 function isTrainingPayload(
   value: unknown,
-): value is { title: string; date: string; type: TrainingType; requestId: string } {
+): value is {
+  title: string;
+  date: string;
+  endDate?: string;
+trainer?: string;
+  type: TrainingType;
+  requestId: string;
+} {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -663,7 +964,9 @@ function isTrainingPayload(
     "type" in value &&
     isTrainingType(value.type) &&
     "requestId" in value &&
-    typeof value.requestId === "string"
+    typeof value.requestId === "string" &&
+    (!("endDate" in value) || typeof value.endDate === "string") &&
+    (!("trainer" in value) || typeof value.trainer === "string")
   );
 }
 
@@ -676,20 +979,38 @@ export async function GET() {
   try {
     const trainingProgressId = getSpreadsheetId("trainingProgress");
     const tttSystemId = getSpreadsheetId("tttSystem");
-    const [mainSchedule, tttScheduleValues, upcomingTtt, tttLog, lfSchedule] =
+    await ensureSheetTab(
+      trainingProgressId,
+      ADMIN_SCHEDULE_TAB,
+      ADMIN_SCHEDULE_HEADERS,
+    );
+    const [progressScheduleValues, adminSchedule, tttScheduleValues, upcomingTtt, tttLog, lfSchedule] =
       await Promise.all([
-        readSheetTable(trainingProgressId, "Training Schedule"),
+        readSheetValues(
+          trainingProgressId,
+          `${quoteSheetName("Training Schedule")}!A:ZZ`,
+        ),
+        readSheetTable(trainingProgressId, ADMIN_SCHEDULE_TAB),
         readSheetValues(tttSystemId, `${quoteSheetName("Schedule")}!A:ZZ`),
         readSheetTable(tttSystemId, "Upcoming TTT"),
         readSheetTable(trainingProgressId, "TTT"),
         readSheetTable(trainingProgressId, "LF"),
       ]);
-    const trainings = deduplicateTrainings([
-      ...parseTable(mainSchedule, "Training Schedule"),
+    const detailedTrainings = [
+      ...parseTable(adminSchedule, ADMIN_SCHEDULE_TAB),
       ...parseTttMasterSchedule(tttScheduleValues),
       ...parseTable(upcomingTtt, "Upcoming TTT", "TTT"),
       ...parseTable(tttLog, "TTT", "TTT"),
       ...parseTable(lfSchedule, "LF", "LF"),
+    ];
+    const detailedTypeDates = new Set(
+      detailedTrainings.map((training) => `${training.type}|${training.date}`),
+    );
+    const legacySchedule = parseTrainingProgressSchedule(progressScheduleValues)
+      .filter((training) => !detailedTypeDates.has(`${training.type}|${training.date}`));
+    const trainings = deduplicateTrainings([
+      ...detailedTrainings,
+      ...legacySchedule,
     ]).sort((left, right) => left.date.localeCompare(right.date));
     return noStoreJson(trainings);
   } catch (error) {
@@ -720,16 +1041,27 @@ export async function POST(request: Request) {
 
   const title = payload.title.trim();
   const date = parseDate(payload.date);
+  const endDate = payload.endDate ? parseDate(payload.endDate) : "";
+  const trainer = payload.trainer?.trim();
   if (
     !title ||
     title.length > 200 ||
     !date ||
+    (payload.endDate && (!endDate || endDate < date)) ||
+    (trainer && trainer.length > 120) ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.requestId)
   ) {
     return noStoreJson({ error: "Invalid training details." }, 400);
   }
 
-  const record = { title, date, type: payload.type, requestId: payload.requestId };
+  const record: NewTraining = {
+    title,
+    date,
+    ...(endDate ? { endDate } : {}),
+    ...(trainer ? { trainer } : {}),
+    type: payload.type,
+    requestId: payload.requestId,
+  };
   if (
     record.type === "TTT" &&
     record.date.slice(0, 4) !== "2025" &&
@@ -741,7 +1073,7 @@ export async function POST(request: Request) {
     );
   }
   const destinations: Array<[AdminSpreadsheet, string, TrainingType?]> = [
-    ["trainingProgress", "Training Schedule"],
+    ["trainingProgress", ADMIN_SCHEDULE_TAB],
   ];
   if (record.type === "TTT") {
     destinations.push(
@@ -754,6 +1086,10 @@ export async function POST(request: Request) {
 
   const completedDestinations: string[] = [];
   try {
+    await writeTrainingProgressScheduleDate(record);
+    if (record.type === "CSG" || record.type === "LF" || record.type === "TTT") {
+      completedDestinations.push("Training Schedule");
+    }
     if (record.type === "TTT") {
       await writeTttMasterScheduleEntry(record);
       completedDestinations.push("Schedule");
@@ -772,8 +1108,13 @@ export async function POST(request: Request) {
         title: record.title,
         type: record.type,
         date: record.date,
+        ...(record.endDate ? { endDate: record.endDate } : {}),
+        ...(record.trainer ? { trainer: record.trainer } : {}),
         attendees: 0,
-        status: record.date < new Date().toISOString().slice(0, 10) ? "Completed" : "Upcoming",
+        status:
+          (record.endDate ?? record.date) < new Date().toISOString().slice(0, 10)
+            ? "Completed"
+            : "Upcoming",
       } satisfies Training,
     });
   } catch (error) {

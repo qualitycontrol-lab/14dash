@@ -12,6 +12,8 @@ type Training = {
   title: string;
   type: TrainingType;
   date: string;
+  endDate?: string;
+  trainer?: string;
   attendees: number;
   bonAttendees?: number;
   attendeeType?: AttendeeType;
@@ -54,6 +56,13 @@ function formatDate(date: string): string {
   }).format(new Date(`${date}T00:00:00Z`));
 }
 
+function formatTrainingDate(training: Pick<Training, "date" | "endDate">): string {
+  const start = formatDate(training.date);
+  return training.endDate && training.endDate !== training.date
+    ? `${start} – ${formatDate(training.endDate)}`
+    : start;
+}
+
 function TrainingTypeLabel({ type }: { type: TrainingType }) {
   const item = trainingTypes.find((trainingType) => trainingType.code === type);
 
@@ -89,7 +98,8 @@ function TrainingList({ trainings }: { trainings: Training[] }) {
             <div className="min-w-0">
               <h3 className="truncate font-semibold text-[#172523]">{training.title}</h3>
               <p className="mt-1 text-sm text-[#71807c]">
-                {formatDate(training.date)} <span aria-hidden="true">·</span> {training.attendees} attendees
+                {formatTrainingDate(training)} <span aria-hidden="true">·</span> {training.attendees} attendees
+                {training.trainer && <> <span aria-hidden="true">·</span> Trainer: {training.trainer}</>}
               </p>
             </div>
           </div>
@@ -241,8 +251,8 @@ function TrainingLog({
 
   function exportTraining(training: Training) {
     downloadCsv(`${training.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.csv`, [
-      ["Training", "Type", "Date", "Attendees", "Check-ins", "Status"],
-      [training.title, training.type, training.date, String(training.attendees), String(training.checkIns ?? 0), training.status],
+      ["Training", "Type", "Date", "End Date", "Trainer", "Attendees", "Check-ins", "Status"],
+      [training.title, training.type, training.date, training.endDate ?? "", training.trainer ?? "", String(training.attendees), String(training.checkIns ?? 0), training.status],
     ]);
   }
 
@@ -276,7 +286,8 @@ function TrainingLog({
                   <div className="min-w-[180px] flex-1">
                     <h3 className="text-sm font-semibold text-[#172523]">{training.title}</h3>
                     <p className="mt-0.5 text-xs text-[#71807c]">
-                      {formatDate(training.date)} <span aria-hidden="true">·</span> {style.label} <span aria-hidden="true">·</span> {training.attendees} attendees <span aria-hidden="true">·</span> {training.checkIns ?? 0} check-ins
+                      {formatTrainingDate(training)} <span aria-hidden="true">·</span> {style.label} <span aria-hidden="true">·</span> {training.attendees} attendees <span aria-hidden="true">·</span> {training.checkIns ?? 0} check-ins
+                      {training.trainer && <> <span aria-hidden="true">·</span> Trainer: {training.trainer}</>}
                     </p>
                   </div>
                   <span className={`rounded-full px-3 py-1 text-[10px] font-semibold ${training.status === "Upcoming" ? "bg-[#e5f3ed] text-[#277657]" : "bg-[#eff2f0] text-[#66736f]"}`}>
@@ -401,6 +412,8 @@ function TrainingForm({
   const [titleError, setTitleError] = useState(false);
   const [type, setType] = useState<TrainingType>("CSG");
   const [date, setDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [trainer, setTrainer] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [requestId, setRequestId] = useState("");
 
@@ -417,13 +430,23 @@ function TrainingForm({
     setRequestId(stableRequestId);
     try {
       const saved = await onCreate(
-        { title: trimmedTitle, type, date, attendees: 0, status: "Upcoming" },
+        {
+          title: trimmedTitle,
+          type,
+          date,
+          ...(type === "CSG" && endDate ? { endDate } : {}),
+          ...(type === "LF" && trainer.trim() ? { trainer: trainer.trim() } : {}),
+          attendees: 0,
+          status: "Upcoming",
+        },
         stableRequestId,
       );
       if (!saved) return;
       setTitle("");
       setTitleError(false);
       setDate("");
+      setEndDate("");
+      setTrainer("");
       setRequestId("");
     } finally {
       setIsSaving(false);
@@ -460,6 +483,8 @@ function TrainingForm({
                 const selectedType = trainingTypes.find((trainingType) => trainingType.code === event.target.value);
                 if (selectedType) {
                   setType(selectedType.code);
+                  if (selectedType.code !== "CSG") setEndDate("");
+                  if (selectedType.code !== "LF") setTrainer("");
                 }
               }}
               className="h-12 w-full rounded-[12px] border border-[#cfdad6] bg-white px-4 text-sm outline-none transition focus:border-[#1ca5a0] focus:ring-2 focus:ring-[#1ca5a0]/15"
@@ -479,6 +504,29 @@ function TrainingForm({
               className="h-12 w-full rounded-[12px] border border-[#cfdad6] bg-white px-4 text-sm outline-none transition focus:border-[#1ca5a0] focus:ring-2 focus:ring-[#1ca5a0]/15 sm:max-w-[260px]"
             />
           </label>
+          {type === "CSG" && (
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-[#344743]">Last day (optional)</span>
+              <input
+                type="date"
+                min={date || undefined}
+                value={endDate}
+                onChange={(event) => setEndDate(event.target.value)}
+                className="h-12 w-full rounded-[12px] border border-[#cfdad6] bg-white px-4 text-sm outline-none transition focus:border-[#1ca5a0] focus:ring-2 focus:ring-[#1ca5a0]/15 sm:max-w-[260px]"
+              />
+            </label>
+          )}
+          {type === "LF" && (
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-[#344743]">Trainer (optional)</span>
+              <input
+                maxLength={120}
+                value={trainer}
+                onChange={(event) => setTrainer(event.target.value)}
+                className="h-12 w-full rounded-[12px] border border-[#cfdad6] bg-white px-4 text-sm outline-none transition focus:border-[#1ca5a0] focus:ring-2 focus:ring-[#1ca5a0]/15 sm:max-w-[360px]"
+              />
+            </label>
+          )}
           <button
             type="submit"
             disabled={isSaving}
@@ -499,7 +547,9 @@ function TrainingForm({
           </p>
         </div>
         <div className="mt-8 border-t border-white/20 pt-5 text-sm text-[#ebfffb]">
-          {date ? formatDate(date) : "Choose a date"}
+          {date
+            ? formatTrainingDate({ date, endDate: type === "CSG" ? endDate : undefined })
+            : "Choose a date"}
           <p className="mt-5 rounded-[14px] border border-white/20 bg-white/10 p-4 text-xs leading-5">
             Training details are saved to the configured Google Sheets.
           </p>
@@ -577,6 +627,8 @@ function isTrainingRecord(value: unknown): value is Training {
     typeof value.title === "string" &&
     trainingTypes.some(({ code }) => code === value.type) &&
     typeof value.date === "string" &&
+    (!("endDate" in value) || typeof value.endDate === "string") &&
+    (!("trainer" in value) || typeof value.trainer === "string") &&
     typeof value.attendees === "number" &&
     (value.status === "Upcoming" || value.status === "Completed")
   );
