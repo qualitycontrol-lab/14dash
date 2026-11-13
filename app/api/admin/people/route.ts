@@ -42,6 +42,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function configuredServiceAccountEmail(): string {
+  const rawCredentials = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (!rawCredentials) return "missing";
+
+  try {
+    const credentials: unknown = JSON.parse(rawCredentials);
+    return isRecord(credentials) && typeof credentials.client_email === "string"
+      ? credentials.client_email
+      : "not present in credentials";
+  } catch {
+    return "invalid JSON";
+  }
+}
+
 function googleSheetsErrorDetails(error: unknown): string {
   if (!isRecord(error)) {
     return JSON.stringify({ message: String(error) });
@@ -803,6 +817,7 @@ export async function GET(request: Request) {
       "Employee passport lookup failed:",
       error instanceof Error ? error.message : String(error),
       `Google API details=${googleSheetsErrorDetails(error)}`,
+      `serviceAccount=${configuredServiceAccountEmail()}`,
     );
     return response({ error: "Unable to load employee course records." }, 502);
   }
