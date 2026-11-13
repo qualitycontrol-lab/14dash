@@ -346,20 +346,224 @@ function TrainingLog({
   );
 }
 
-function Overview({ trainings, onNavigate }: { trainings: Training[]; onNavigate: (section: AdminSection) => void }) {
-  const upcoming = trainings.filter((training) => training.status === "Upcoming");
-  const attendees = trainings.reduce((total, training) => total + training.attendees, 0);
+function Overview({
+  trainings,
+  onNavigate,
+}: {
+  trainings: Training[];
+  onNavigate: (section: AdminSection) => void;
+}) {
+  const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(true);
+  const [attendanceError, setAttendanceError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAttendance() {
+      setAttendanceLoading(true);
+      setAttendanceError(null);
+      try {
+        const response = await fetch("/api/admin/attendance", { cache: "no-store" });
+        const result: unknown = await response.json();
+        if (!response.ok) {
+          throw new Error(
+            typeof result === "object" &&
+              result !== null &&
+              "error" in result &&
+              typeof result.error === "string"
+              ? result.error
+              : "Unable to load attendance.",
+          );
+        }
+        if (!Array.isArray(result) || !result.every(isAttendanceEntry)) {
+          throw new Error("Attendance returned an invalid response.");
+        }
+        if (!cancelled) setAttendance(result);
+      } catch (error) {
+        console.error("Overview attendance lookup failed:", error);
+        if (!cancelled) {
+          setAttendanceError(
+            error instanceof Error ? error.message : "Unable to load attendance.",
+          );
+        }
+      } finally {
+        if (!cancelled) setAttendanceLoading(false);
+      }
+    }
+
+    void loadAttendance();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const currentMonth = today.slice(0, 7);
+  const previousMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const currentMonthStart = `${currentMonth}-01`;
+  const currentMonthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1))
+    .toISOString()
+    .slice(0, 10);
+  const previousMonthStart = previousMonthDate.toISOString().slice(0, 10);
+  const previousMonthElapsedDays = Math.min(
+    now.getUTCDate(),
+    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0)).getUTCDate(),
+  );
+  const previousMonthEnd = new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth() - 1,
+      previousMonthElapsedDays + 1,
+    ),
+  )
+    .toISOString()
+    .slice(0, 10);
+  const currentMonthAttendance = attendance.filter((entry) => {
+    const date = entry.checkedInAt.slice(0, 10);
+    return date >= currentMonthStart && date < currentMonthEnd;
+  });
+  const previousMonthCheckIns = attendance.filter((entry) => {
+    const date = entry.checkedInAt.slice(0, 10);
+    return date >= previousMonthStart && date < previousMonthEnd;
+  }).length;
+  const uniqueLearners = new Set(
+    currentMonthAttendance.map((entry) =>
+      entry.email.trim().toLowerCase() || `name:${entry.name.trim().toLowerCase()}`,
+    ),
+  ).size;
+  const completedThisMonth = trainings.filter(
+    (training) =>
+      training.status === "Completed" &&
+      (training.endDate ?? training.date).startsWith(currentMonth),
+  ).length;
+  const horizon = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 30))
+    .toISOString()
+    .slice(0, 10);
+  const upcoming = trainings
+    .filter(
+      (training) =>
+        training.status === "Upcoming" &&
+        (training.endDate ?? training.date) >= today &&
+        training.date <= horizon,
+    )
+    .sort((left, right) => left.date.localeCompare(right.date));
+  const nextTrainings = upcoming.slice(0, 5);
+
+  const currentWeekStart = new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() - ((now.getUTCDay() + 6) % 7),
+    ),
+  );
+  const weeklyCheckIns = Array.from({ length: 8 }, (_, index) => {
+    const start = new Date(currentWeekStart);
+    start.setUTCDate(start.getUTCDate() - (7 - index) * 7);
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 7);
+    const startKey = start.toISOString().slice(0, 10);
+    const endKey = end.toISOString().slice(0, 10);
+    const count = attendance.filter((entry) => {
+      const date = entry.checkedInAt.slice(0, 10);
+      return date >= startKey && date < endKey;
+    }).length;
+    return {
+      label: new Intl.DateTimeFormat("en", {
+        month: "short",
+        day: "numeric",
+        timeZone: "UTC",
+      }).format(start),
+      count,
+    };
+  });
+  const maxWeeklyCheckIns = Math.max(1, ...weeklyCheckIns.map(({ count }) => count));
+  const categoryCheckIns = Array.from(
+    currentMonthAttendance.reduce((summary, entry) => {
+      const category = entry.category || "Uncategorized";
+      summary.set(category, (summary.get(category) ?? 0) + 1);
+      return summary;
+    }, new Map<string, number>()),
+    ([category, count]) => ({ category, count }),
+  )
+    .sort((left, right) => right.count - left.count)
+    .slice(0, 5);
+  const maxCategoryCheckIns = Math.max(1, ...categoryCheckIns.map(({ count }) => count));
+
+  const recentAttendanceWindowStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 30),
+  )
+    .toISOString()
+    .slice(0, 10);
+  const genericTitles = new Set([
+    "center for self governance",
+    "learning forum",
+    "train the trainer",
+  ]);
+  const attendanceFollowUps =
+    attendanceError || attendanceLoading
+      ? []
+      : trainings
+          .filter((training) => {
+            const endDate = training.endDate ?? training.date;
+            if (
+              training.status !== "Completed" ||
+              endDate < recentAttendanceWindowStart ||
+              endDate > today ||
+              genericTitles.has(training.title.trim().toLowerCase())
+            ) {
+              return false;
+            }
+            const normalizedTitle = training.title.trim().toLowerCase();
+            return !attendance.some((entry) => {
+              const entryDate = entry.checkedInAt.slice(0, 10);
+              const normalizedEntryTraining = entry.training.trim().toLowerCase();
+              return (
+                normalizedEntryTraining.length > 0 &&
+                entryDate >= training.date &&
+                entryDate <= endDate &&
+                (normalizedEntryTraining.includes(normalizedTitle) ||
+                  normalizedTitle.includes(normalizedEntryTraining))
+              );
+            });
+          })
+          .slice(0, 4);
+
+  const monthlyChange =
+    previousMonthCheckIns === 0
+      ? currentMonthAttendance.length
+        ? "New activity this month"
+        : "No check-ins yet"
+      : `${currentMonthAttendance.length >= previousMonthCheckIns ? "+" : ""}${Math.round(
+          ((currentMonthAttendance.length - previousMonthCheckIns) /
+            previousMonthCheckIns) *
+            100,
+        )}% vs same period last month`;
 
   return (
-    <div className="space-y-8">
-      <div>
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#168f89]">Overview</p>
-            <h1 className="mt-2 text-4xl font-semibold tracking-[-0.06em] text-[#14211f] sm:text-5xl">
-              Training overview
-            </h1>
-          </div>
+    <div className="space-y-7">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#168f89]">Overview</p>
+          <h1 className="mt-2 text-4xl font-semibold tracking-[-0.06em] text-[#14211f] sm:text-5xl">
+            Training overview
+          </h1>
+          <p className="mt-3 text-[#5b6d69]">
+            Activity for {new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" }).format(now)}
+            {" "}and what needs your attention.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setRefreshKey((key) => key + 1)}
+            disabled={attendanceLoading}
+            className="h-11 rounded-full border border-[#cfdad6] bg-white px-4 text-sm font-semibold text-[#344743] hover:bg-[#eaf5f1] disabled:opacity-60"
+          >
+            {attendanceLoading ? "Refreshing…" : "Refresh attendance"}
+          </button>
           <button
             onClick={() => onNavigate("Start training")}
             className="inline-flex h-11 items-center justify-center rounded-full bg-[#1aa6a1] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#148d88]"
@@ -367,36 +571,205 @@ function Overview({ trainings, onNavigate }: { trainings: Training[]; onNavigate
             + Start a training
           </button>
         </div>
-        <p className="mt-3 text-[#5b6d69]">A quick look at training activity and what’s coming up.</p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: "Total trainings", value: trainings.length, note: "Across all categories" },
-          { label: "Upcoming", value: upcoming.length, note: "Scheduled trainings" },
-          { label: "Attendees", value: attendees, note: "Across listed trainings" },
-          { label: "Training types", value: new Set(trainings.map((training) => training.type)).size, note: "Currently represented" },
+          {
+            label: "Check-ins this month",
+            value: attendanceError ? "—" : currentMonthAttendance.length,
+            note: attendanceError ? "Attendance unavailable" : monthlyChange,
+          },
+          {
+            label: "Unique learners",
+            value: attendanceError ? "—" : uniqueLearners,
+            note: "Checked in this month",
+          },
+          {
+            label: "Completed trainings",
+            value: completedThisMonth,
+            note: "This month",
+          },
+          {
+            label: "Upcoming trainings",
+            value: upcoming.length,
+            note: "Next 30 days",
+          },
         ].map((stat) => (
-          <div key={stat.label} className="rounded-[22px] border border-[#d7e1dd] bg-[#f8fbf9] p-5">
+          <div key={stat.label} className="rounded-[22px] border border-[#d7e1dd] bg-white p-5">
             <p className="text-sm font-medium text-[#687975]">{stat.label}</p>
-            <p className="mt-3 text-4xl font-semibold tracking-[-0.06em] text-[#15221f]">{stat.value}</p>
+            <p className="mt-3 text-4xl font-semibold tracking-[-0.06em] text-[#15221f]">
+              {attendanceLoading && stat.label !== "Completed trainings" && stat.label !== "Upcoming trainings"
+                ? "…"
+                : stat.value}
+            </p>
             <p className="mt-2 text-xs text-[#7b8985]">{stat.note}</p>
           </div>
         ))}
       </div>
 
-      <section>
-        <div className="mb-4 flex items-center justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-semibold tracking-[-0.04em] text-[#172523]">Upcoming trainings</h2>
-            <p className="mt-1 text-sm text-[#71807c]">The next scheduled trainings at a glance.</p>
+      <div className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
+        <section className="rounded-[22px] border border-[#d7e1dd] bg-white p-5 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-[#172523]">Attendance activity</h2>
+              <p className="mt-1 text-sm text-[#71807c]">Check-ins by week · last 8 weeks</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate("Reporting")}
+              className="text-sm font-semibold text-[#147e78]"
+            >
+              Open reporting
+            </button>
           </div>
-          <button className="text-sm font-semibold text-[#147e78]" onClick={() => onNavigate("Trainings")}>
-            View all trainings
-          </button>
-        </div>
-        <TrainingList trainings={upcoming} />
-      </section>
+          {attendanceError ? (
+            <p role="alert" className="mt-6 rounded-[12px] bg-[#fff4f3] px-4 py-3 text-sm text-[#a94856]">
+              Attendance data could not be loaded. Use Refresh to try again.
+            </p>
+          ) : attendanceLoading ? (
+            <p className="mt-8 text-sm text-[#71807c]">Loading attendance activity…</p>
+          ) : (
+            <div
+              className="mt-7 flex h-36 items-end gap-2 sm:gap-4"
+              role="img"
+              aria-label={`Weekly check-ins for the last eight weeks: ${weeklyCheckIns.map(({ label, count }) => `${label}: ${count}`).join(", ")}`}
+            >
+              {weeklyCheckIns.map((week) => (
+                <div key={week.label} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
+                  <span className="text-[10px] font-medium text-[#71807c]">{week.count || ""}</span>
+                  <div className="flex h-24 w-full items-end rounded-t-[7px] bg-[#f1f6f3]">
+                    <div
+                      className="w-full rounded-t-[7px] bg-[#1aa6a1] transition-[height]"
+                      style={{
+                        height: `${week.count ? Math.max(8, (week.count / maxWeeklyCheckIns) * 100) : 3}%`,
+                      }}
+                      title={`${week.count} check-ins`}
+                    />
+                  </div>
+                  <span className="truncate text-[10px] text-[#71807c]">{week.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-[22px] border border-[#d7e1dd] bg-white p-5 sm:p-6">
+          <div>
+            <h2 className="text-lg font-semibold text-[#172523]">By training type</h2>
+            <p className="mt-1 text-sm text-[#71807c]">Check-ins this month</p>
+          </div>
+          {attendanceError ? (
+            <p className="mt-6 text-sm text-[#71807c]">Attendance breakdown unavailable.</p>
+          ) : attendanceLoading ? (
+            <p className="mt-6 text-sm text-[#71807c]">Loading category totals…</p>
+          ) : categoryCheckIns.length ? (
+            <div className="mt-5 space-y-4">
+              {categoryCheckIns.map(({ category, count }) => (
+                <div key={category}>
+                  <div className="mb-1.5 flex justify-between gap-3 text-sm">
+                    <span className="truncate text-[#344743]">{category}</span>
+                    <span className="font-semibold text-[#344743]">{count}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-[#edf2ef]">
+                    <div
+                      className="h-full rounded-full bg-[#55aaa0]"
+                      style={{ width: `${(count / maxCategoryCheckIns) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-6 text-sm text-[#71807c]">No check-ins recorded this month.</p>
+          )}
+        </section>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1.35fr_1fr]">
+        <section className="rounded-[22px] border border-[#d7e1dd] bg-white">
+          <div className="flex items-center justify-between gap-3 border-b border-[#e5ebe8] px-5 py-4 sm:px-6">
+            <div>
+              <h2 className="text-lg font-semibold text-[#172523]">Coming up</h2>
+              <p className="mt-1 text-sm text-[#71807c]">Next scheduled sessions</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate("Trainings")}
+              className="text-sm font-semibold text-[#147e78]"
+            >
+              Full schedule
+            </button>
+          </div>
+          {nextTrainings.length ? (
+            <div>
+              {nextTrainings.map((training, index) => (
+                <article
+                  key={training.id}
+                  className={`flex items-center gap-3 px-5 py-3.5 sm:px-6 ${index ? "border-t border-[#edf1ef]" : ""}`}
+                >
+                  <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-[12px] bg-[#eaf5f1] text-[#147e78]">
+                    <span className="text-[9px] font-semibold uppercase">
+                      {new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(new Date(`${training.date}T00:00:00Z`))}
+                    </span>
+                    <span className="text-base font-semibold leading-5">
+                      {new Date(`${training.date}T00:00:00Z`).getUTCDate()}
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate text-sm font-semibold text-[#172523]">{training.title}</h3>
+                    <p className="mt-0.5 truncate text-xs text-[#71807c]">
+                      {formatTrainingDate(training)}
+                      {training.trainer ? ` · ${training.trainer}` : ""}
+                    </p>
+                  </div>
+                  <TrainingTypeLabel type={training.type} />
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="px-5 py-8 text-sm text-[#71807c]">
+              No trainings are scheduled in the next 30 days.
+            </p>
+          )}
+        </section>
+
+        <section className="rounded-[22px] border border-[#d7e1dd] bg-white">
+          <div className="border-b border-[#e5ebe8] px-5 py-4 sm:px-6">
+            <h2 className="text-lg font-semibold text-[#172523]">Attendance to review</h2>
+            <p className="mt-1 text-sm text-[#71807c]">Recent completed sessions with no matching check-ins</p>
+          </div>
+          {attendanceError ? (
+            <p className="px-5 py-8 text-sm text-[#71807c]">Attendance data is needed to identify follow-ups.</p>
+          ) : attendanceLoading ? (
+            <p className="px-5 py-8 text-sm text-[#71807c]">Checking recent attendance…</p>
+          ) : attendanceFollowUps.length ? (
+            <div>
+              {attendanceFollowUps.map((training, index) => (
+                <div
+                  key={training.id}
+                  className={`flex items-start justify-between gap-3 px-5 py-3.5 sm:px-6 ${index ? "border-t border-[#edf1ef]" : ""}`}
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-[#344743]">{training.title}</p>
+                    <p className="mt-0.5 text-xs text-[#71807c]">{formatTrainingDate(training)}</p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-[#fff1e5] px-2.5 py-1 text-[10px] font-semibold text-[#9a5c20]">
+                    No check-ins found
+                  </span>
+                </div>
+              ))}
+              <p className="border-t border-[#edf1ef] px-5 py-3 text-xs text-[#71807c] sm:px-6">
+                Check-ins may be recorded elsewhere; verify before taking action.
+              </p>
+            </div>
+          ) : (
+            <p className="px-5 py-8 text-sm text-[#71807c]">
+              No recent attendance follow-ups found.
+            </p>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
