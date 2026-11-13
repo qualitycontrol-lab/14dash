@@ -66,11 +66,9 @@ export function getGoogleSheetsClient(): sheets_v4.Sheets {
     ]);
   }
 
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: credentials.client_email,
-      private_key: credentials.private_key.replaceAll("\\n", "\n"),
-    },
+  const auth = new google.auth.JWT({
+    email: credentials.client_email,
+    key: credentials.private_key.replaceAll("\\n", "\n"),
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
   sheetsClient = google.sheets({ version: "v4", auth });
