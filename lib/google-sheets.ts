@@ -131,6 +131,21 @@ export async function readSheetValues(
   }
 }
 
+export async function readSheetRanges(
+  spreadsheetId: string,
+  ranges: string[],
+): Promise<string[][][]> {
+  const response = await getGoogleSheetsClient().spreadsheets.values.batchGet({
+    spreadsheetId,
+    ranges,
+  });
+  return ranges.map((_, index) =>
+    (response.data.valueRanges?.[index]?.values ?? []).map((row) =>
+      row.map((value) => String(value ?? "").trim()),
+    ),
+  );
+}
+
 export async function writeSheetValues(
   spreadsheetId: string,
   range: string,
@@ -260,22 +275,12 @@ export async function ensureHiddenColumns(
   headerRow: number,
   headerNames: string[],
   startColumnIndex = 0,
+  existingValues?: string[][],
 ): Promise<Map<string, number>> {
   const sheets = getGoogleSheetsClient();
   const quotedName = quoteSheetName(sheetName);
-  const values = await readSheetValues(spreadsheetId, `${quotedName}!A:ZZ`);
+  const values = existingValues ?? await readSheetValues(spreadsheetId, `${quotedName}!A:ZZ`);
   const headers = values[headerRow - 1] ?? [];
-  const metadata = await sheets.spreadsheets.get({
-    spreadsheetId,
-    fields: "sheets(properties(sheetId,title,gridProperties(columnCount)))",
-  });
-  const properties = metadata.data.sheets
-    ?.map((sheet) => sheet.properties)
-    .find((sheet) => sheet?.title === sheetName);
-  if (properties?.sheetId === undefined) {
-    throw new GoogleSheetsDataError(`The "${sheetName}" tab was not found.`);
-  }
-
   const result = new Map<string, number>();
   const toAdd: Array<{ name: string; index: number }> = [];
   const usedColumnCount = values.reduce(
@@ -300,6 +305,19 @@ export async function ensureHiddenColumns(
     result.set(headerName, nextIndex);
     toAdd.push({ name: headerName, index: nextIndex });
     nextIndex += 1;
+  }
+
+  if (!toAdd.length) return result;
+
+  const metadata = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets(properties(sheetId,title,gridProperties(columnCount)))",
+  });
+  const properties = metadata.data.sheets
+    ?.map((sheet) => sheet.properties)
+    .find((sheet) => sheet?.title === sheetName);
+  if (properties?.sheetId === undefined) {
+    throw new GoogleSheetsDataError(`The "${sheetName}" tab was not found.`);
   }
 
   const requiredColumnCount = nextIndex;

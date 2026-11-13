@@ -1211,7 +1211,7 @@ function PeopleView() {
       setPassportPersonId(person.id);
       try {
         const response = await fetch(
-          `/api/admin/people?name=${encodeURIComponent(person.name)}&email=${encodeURIComponent(person.email)}`,
+          `/api/admin/people?name=${encodeURIComponent(person.name)}`,
           { signal: controller.signal, cache: "no-store" },
         );
         const result: unknown = await response.json();

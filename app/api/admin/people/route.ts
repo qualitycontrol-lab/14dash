@@ -8,6 +8,7 @@ import {
   getSpreadsheetId,
   GoogleSheetsConfigurationError,
   GoogleSheetsDataError,
+  readSheetRanges,
   readSheetValues,
   quoteSheetName,
 } from "@/lib/google-sheets";
@@ -118,15 +119,26 @@ function parseCsgCompletionDates(value: string): Record<string, string> {
 async function ensureCsgMetadataColumns(
   spreadsheetId: string,
   tab: string,
-): Promise<Map<string, number>> {
+  existingValues?: string[][],
+): Promise<{ columns: Map<string, number>; values: string[][] }> {
   const headerNames = ["Employee Email", "Completion Dates ISO JSON"];
-  const initialColumns = await ensureHiddenColumns(spreadsheetId, tab, 2, headerNames);
+  const values = existingValues ?? await readSheetValues(
+    spreadsheetId,
+    `${quoteSheetName(tab)}!A:ZZ`,
+  );
+  const initialColumns = await ensureHiddenColumns(
+    spreadsheetId,
+    tab,
+    2,
+    headerNames,
+    0,
+    values,
+  );
   const dateColumn = initialColumns.get("Completion Dates ISO JSON");
   if (dateColumn === undefined) {
     throw new GoogleSheetsDataError(`The "${tab}" tab has no completion date metadata column.`);
   }
 
-  const values = await readSheetValues(spreadsheetId, `${quoteSheetName(tab)}!A:ZZ`);
   const preservedDates = values.flatMap((row, rowIndex) => {
     if (rowIndex < 2) return [];
     const value = row[dateColumn] ?? "";
@@ -148,7 +160,7 @@ async function ensureCsgMetadataColumns(
       return true;
     }
   });
-  if (!hasCollision) return initialColumns;
+  if (!hasCollision) return { columns: initialColumns, values };
 
   const sheets = getGoogleSheetsClient();
   const metadata = await sheets.spreadsheets.get({
@@ -186,7 +198,18 @@ async function ensureCsgMetadataColumns(
     },
   });
 
-  const columns = await ensureHiddenColumns(spreadsheetId, tab, 2, headerNames);
+  const refreshedValues = await readSheetValues(
+    spreadsheetId,
+    `${quoteSheetName(tab)}!A:ZZ`,
+  );
+  const columns = await ensureHiddenColumns(
+    spreadsheetId,
+    tab,
+    2,
+    headerNames,
+    0,
+    refreshedValues,
+  );
   const relocatedDateColumn = columns.get("Completion Dates ISO JSON");
   if (relocatedDateColumn === undefined) {
     throw new GoogleSheetsDataError(`The "${tab}" tab has no completion date metadata column.`);
@@ -203,17 +226,42 @@ async function ensureCsgMetadataColumns(
       requestBody: { valueInputOption: "RAW", data: updates },
     });
   }
-  return columns;
+  return {
+    columns,
+    values: await readSheetValues(spreadsheetId, `${quoteSheetName(tab)}!A:ZZ`),
+  };
+}
+
+async function ensureHcaMetadataColumns(
+  spreadsheetId: string,
+): Promise<{ columns: Map<string, number>; values: string[][] }> {
+  const values = await readSheetValues(spreadsheetId, `${quoteSheetName(HCA_TAB)}!A:K`);
+  const columns = await ensureHiddenColumns(
+    spreadsheetId,
+    HCA_TAB,
+    1,
+    ["BON Employee Email", "Associated Employee Email", "Record UUID", "Completion Date ISO"],
+    7,
+    values,
+  );
+  return { columns, values };
 }
 
 async function findCsgCourses(name: string): Promise<PassportCourse[]> {
   const spreadsheetId = getSpreadsheetId("csgTracker");
   const normalizedName = normalizeName(name);
   const courses: PassportCourse[] = [];
+  const tabValues = await readSheetRanges(
+    spreadsheetId,
+    CSG_TABS.map((tab) => `${quoteSheetName(tab)}!A:ZZ`),
+  );
 
-  for (const tab of CSG_TABS) {
-    const metadataColumns = await ensureCsgMetadataColumns(spreadsheetId, tab);
-    const values = await readSheetValues(spreadsheetId, `${quoteSheetName(tab)}!A:ZZ`);
+  for (const [tabIndex, tab] of CSG_TABS.entries()) {
+    const { columns: metadataColumns, values } = await ensureCsgMetadataColumns(
+      spreadsheetId,
+      tab,
+      tabValues[tabIndex],
+    );
     const headers = values[1] ?? [];
     const exactDateColumn = metadataColumns.get("Completion Dates ISO JSON");
     if (exactDateColumn === undefined) {
@@ -262,18 +310,11 @@ async function findCsgCourses(name: string): Promise<PassportCourse[]> {
 
 async function findHcaCourses(name: string): Promise<PassportCourse[]> {
   const spreadsheetId = getSpreadsheetId("attendance");
-  const metadataColumns = await ensureHiddenColumns(
-    spreadsheetId,
-    HCA_TAB,
-    1,
-    ["BON Employee Email", "Associated Employee Email", "Record UUID", "Completion Date ISO"],
-    7,
-  );
+  const { columns: metadataColumns, values } = await ensureHcaMetadataColumns(spreadsheetId);
   const completionDateColumn = metadataColumns.get("Completion Date ISO");
   if (completionDateColumn === undefined) {
     throw new GoogleSheetsDataError("The HCA tracker has no completion date column.");
   }
-  const values = await readSheetValues(spreadsheetId, `${quoteSheetName(HCA_TAB)}!A:K`);
   const normalizedName = normalizeName(name);
   const courses: PassportCourse[] = [];
 
@@ -311,8 +352,10 @@ async function updateCsgCourse(
     throw new GoogleSheetsDataError("Unknown CSG tracker tab.");
   }
   const spreadsheetId = getSpreadsheetId("csgTracker");
-  const metadataColumns = await ensureCsgMetadataColumns(spreadsheetId, tab);
-  const values = await readSheetValues(spreadsheetId, `${quoteSheetName(tab)}!A:ZZ`);
+  const { columns: metadataColumns, values } = await ensureCsgMetadataColumns(
+    spreadsheetId,
+    tab,
+  );
   const row = values[rowNumber - 1];
   if (
     !row ||
@@ -386,14 +429,7 @@ async function updateHcaCourse(
   email: string,
 ): Promise<void> {
   const spreadsheetId = getSpreadsheetId("attendance");
-  const metadataColumns = await ensureHiddenColumns(
-    spreadsheetId,
-    HCA_TAB,
-    1,
-    ["BON Employee Email", "Associated Employee Email", "Record UUID", "Completion Date ISO"],
-    7,
-  );
-  const values = await readSheetValues(spreadsheetId, `${quoteSheetName(HCA_TAB)}!A:K`);
+  const { columns: metadataColumns, values } = await ensureHcaMetadataColumns(spreadsheetId);
   const row = values[rowNumber - 1];
   if (
     !row ||
@@ -500,126 +536,6 @@ function isIsoDate(value: string): boolean {
     return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
   }
 
-async function backfillEmployeeEmail(name: string, email: string): Promise<void> {
-    if (!isValidBonEmail(email)) {
-      throw new GoogleSheetsDataError("Employee email must be a BON Google Workspace address.");
-    }
-    const normalizedName = normalizeName(name);
-    const normalizedEmail = email.trim().toLowerCase();
-
-    const progressId = getSpreadsheetId("trainingProgress");
-    const progressValues = await readSheetValues(
-      progressId,
-      "'2026 Q4 Training Progress'!A:ZZ",
-    );
-    const progressRows = progressValues.flatMap((row, index) =>
-      index >= 54 &&
-      normalizeName(`${row[1] ?? ""} ${row[0] ?? ""}`) === normalizedName
-        ? [index + 1]
-        : [],
-    );
-    if (progressRows.length > 1) {
-      throw new GoogleSheetsDataError(
-        "More than one training progress row matches this employee name.",
-      );
-    }
-    if (progressRows.length === 1) {
-      await getGoogleSheetsClient().spreadsheets.values.update({
-        spreadsheetId: progressId,
-        range: `'2026 Q4 Training Progress'!D${progressRows[0]}`,
-        valueInputOption: "RAW",
-        requestBody: { values: [[normalizedEmail]] },
-      });
-    }
-
-    const csgId = getSpreadsheetId("csgTracker");
-    for (const tab of CSG_TABS) {
-      const columns = await ensureCsgMetadataColumns(csgId, tab);
-      const emailColumn = columns.get("Employee Email");
-      if (emailColumn === undefined) {
-        throw new GoogleSheetsDataError(`The "${tab}" tab has no employee email column.`);
-      }
-      const values = await readSheetValues(csgId, `${quoteSheetName(tab)}!A:ZZ`);
-      const matches = values.flatMap((row, index) =>
-        index >= 2 &&
-        normalizeName(`${row[1] ?? ""} ${row[0] ?? ""}`) === normalizedName
-          ? [index + 1]
-          : [],
-      );
-      if (matches.length > 1) {
-        throw new GoogleSheetsDataError(
-          `More than one matching employee row exists on the "${tab}" CSG tab.`,
-        );
-      }
-      if (matches.length === 1) {
-        await getGoogleSheetsClient().spreadsheets.values.update({
-          spreadsheetId: csgId,
-          range: `${quoteSheetName(tab)}!${columnLetter(emailColumn)}${matches[0]}`,
-          valueInputOption: "RAW",
-          requestBody: { values: [[normalizedEmail]] },
-        });
-      }
-    }
-
-    const hcaId = getSpreadsheetId("attendance");
-    const hcaColumns = await ensureHiddenColumns(
-      hcaId,
-      HCA_TAB,
-      1,
-      ["BON Employee Email", "Associated Employee Email", "Record UUID", "Completion Date ISO"],
-      7,
-    );
-    const bonEmailColumn = hcaColumns.get("BON Employee Email");
-    if (bonEmailColumn === undefined) {
-      throw new GoogleSheetsDataError("The HCA tracker has no BON employee email column.");
-    }
-    const hcaValues = await readSheetValues(hcaId, `${quoteSheetName(HCA_TAB)}!A:K`);
-    const hcaRows = hcaValues.flatMap((row, index) =>
-      normalizeName(row[2] ?? "") === normalizedName ? [index + 1] : [],
-    );
-    if (hcaRows.length) {
-      await getGoogleSheetsClient().spreadsheets.values.batchUpdate({
-        spreadsheetId: hcaId,
-        requestBody: {
-          valueInputOption: "RAW",
-          data: hcaRows.map((row) => ({
-            range: `${quoteSheetName(HCA_TAB)}!${columnLetter(bonEmailColumn)}${row}`,
-            values: [[normalizedEmail]],
-          })),
-        },
-      });
-    }
-
-    const tttId = getSpreadsheetId("tttSystem");
-    for (const tab of ["2025 TTT Attendance", "2026 TTT Attendance"]) {
-      await ensureHiddenColumns(
-        tttId,
-        tab,
-        1,
-        ["Session UUID / Employee Email"],
-        10,
-      );
-      const values = await readSheetValues(tttId, `${quoteSheetName(tab)}!A:K`);
-      const updates = values.flatMap((row, index) =>
-        index > 0 &&
-        Boolean(row[0]?.trim()) &&
-        Boolean(row[1]?.trim()) &&
-        normalizeName(`${row[1]} ${row[0]}`) === normalizedName
-          ? [{
-              range: `${quoteSheetName(tab)}!K${index + 1}`,
-              values: [[normalizedEmail]],
-            }]
-          : [],
-      );
-      if (updates.length) {
-        await getGoogleSheetsClient().spreadsheets.values.batchUpdate({
-          spreadsheetId: tttId,
-          requestBody: { valueInputOption: "RAW", data: updates },
-        });
-      }
-    }
-  }
-
 function weeklyTallyCell(
     values: string[][],
     date: string,
@@ -686,16 +602,18 @@ async function recalculateWeeklyTally(
     let count = 0;
 
     if (category === "CSG") {
-      for (const tab of CSG_TABS) {
-        const columns = await ensureHiddenColumns(
+      const tabValues = await readSheetRanges(
+        csgId,
+        CSG_TABS.map((tab) => `${quoteSheetName(tab)}!A:ZZ`),
+      );
+      for (const [tabIndex, tab] of CSG_TABS.entries()) {
+        const { columns, values } = await ensureCsgMetadataColumns(
           csgId,
           tab,
-          2,
-          ["Employee Email", "Completion Dates ISO JSON"],
+          tabValues[tabIndex],
         );
         const dateColumn = columns.get("Completion Dates ISO JSON");
         if (dateColumn === undefined) continue;
-        const values = await readSheetValues(csgId, `${quoteSheetName(tab)}!A:ZZ`);
         const matches = values.flatMap((row, index) =>
           index >= 2 &&
           normalizeName(`${row[1] ?? ""} ${row[0] ?? ""}`) === normalizeName(employeeName)
@@ -716,18 +634,11 @@ async function recalculateWeeklyTally(
       }
     } else {
       const hcaId = getSpreadsheetId("attendance");
-      const columns = await ensureHiddenColumns(
-        hcaId,
-        HCA_TAB,
-        1,
-        ["BON Employee Email", "Associated Employee Email", "Record UUID", "Completion Date ISO"],
-        7,
-      );
+      const { columns, values } = await ensureHcaMetadataColumns(hcaId);
       const dateColumn = columns.get("Completion Date ISO");
       if (dateColumn === undefined) {
         throw new GoogleSheetsDataError("The HCA tracker has no completion date column.");
       }
-      const values = await readSheetValues(hcaId, `${quoteSheetName(HCA_TAB)}!A:K`);
       count = values.reduce((total, row) => {
         const bonRecord =
           normalizeName(row[2] ?? "") === normalizeName(employeeName) && isChecked(row[1]);
@@ -857,13 +768,11 @@ export async function GET(request: Request) {
   if (!isAdminEmail(session?.user?.email)) return response({ error: "Unauthorized." }, 401);
 
   const name = new URL(request.url).searchParams.get("name")?.trim() ?? "";
-  const email = new URL(request.url).searchParams.get("email")?.trim() ?? "";
   if (!name || name.length > 150) {
     return response({ error: "A valid employee name is required." }, 400);
   }
 
   try {
-    if (email) await backfillEmployeeEmail(name, email);
     const [csg, hca] = await Promise.all([findCsgCourses(name), findHcaCourses(name)]);
     return response([...csg, ...hca]);
   } catch (error) {

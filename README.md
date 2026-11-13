@@ -96,13 +96,13 @@ destinations succeeded, and retrying the same form submission uses its stable
 UUID to avoid duplicate rows.
 
 The employee passport finds CSG and HCA records by normalized full name and
-backfills employee email metadata when an unambiguous directory match is
-available. CSG keeps its visible `M/YY` dates and stores exact completion dates
-in hidden metadata; HCA completion dates and employee emails are stored in
-hidden columns on the `HCA` tab. CSG and HCA edits rebuild BON weekly totals
-from exact dates rather than incrementing counters, so retries do not
-double-count. Training goals are persisted by employee email in a
-`Training Goals` tab in the BON training progress spreadsheet.
+does not modify Sheets during lookup. CSG keeps its visible `M/YY` dates and
+stores exact completion dates in hidden metadata; HCA completion dates and
+employee emails are stored in hidden columns on the `HCA` tab when a course is
+updated. CSG and HCA edits rebuild BON weekly totals from exact dates rather
+than incrementing counters, so retries do not double-count. Training goals are
+persisted by employee email in a `Training Goals` tab in the BON training
+progress spreadsheet.
 
 TTT attendance matching uses the session title/date and roster name; it
 updates the weekly TTT count from checked attendance rows. When a TTT training
