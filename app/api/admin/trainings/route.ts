@@ -97,7 +97,7 @@ function findTttScheduleSections(values: string[][]): TttScheduleSection[] {
         !yearMatch ||
         !/train\s+the\s+trainer|\bttt\b/i.test(titleHeading)
       ) {
-        return;
+        continue;
       }
       sections.push({
         year: Number(yearMatch[1]),
