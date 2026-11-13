@@ -120,7 +120,7 @@ function normalizeHeader(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-function columnLetter(index: number): string {
+export function columnLetter(index: number): string {
   let value = index + 1;
   let result = "";
   while (value > 0) {
@@ -224,6 +224,144 @@ export async function ensureIdColumn(
   });
 
   return readSheetTable(spreadsheetId, sheetName);
+}
+
+export async function ensureHiddenColumns(
+  spreadsheetId: string,
+  sheetName: string,
+  headerRow: number,
+  headerNames: string[],
+  startColumnIndex = 0,
+): Promise<Map<string, number>> {
+  const sheets = getGoogleSheetsClient();
+  const quotedName = quoteSheetName(sheetName);
+  const values = await readSheetValues(spreadsheetId, `${quotedName}!A:ZZ`);
+  const headers = values[headerRow - 1] ?? [];
+  const metadata = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets(properties(sheetId,title,gridProperties(columnCount)))",
+  });
+  const properties = metadata.data.sheets
+    ?.map((sheet) => sheet.properties)
+    .find((sheet) => sheet?.title === sheetName);
+  if (properties?.sheetId === undefined) {
+    throw new GoogleSheetsDataError(`The "${sheetName}" tab was not found.`);
+  }
+
+  const result = new Map<string, number>();
+  const toAdd: Array<{ name: string; index: number }> = [];
+  let nextIndex = Math.max(headers.length, startColumnIndex);
+  for (const headerName of headerNames) {
+    const existingIndex = headers.findIndex(
+      (header) => normalizeHeader(header) === normalizeHeader(headerName),
+    );
+    if (existingIndex >= 0) {
+      result.set(headerName, existingIndex);
+      continue;
+    }
+
+    while (headers[nextIndex]?.trim()) nextIndex += 1;
+    result.set(headerName, nextIndex);
+    toAdd.push({ name: headerName, index: nextIndex });
+    nextIndex += 1;
+  }
+
+  const requiredColumnCount = nextIndex;
+  const columnCount = properties.gridProperties?.columnCount ?? 0;
+  if (requiredColumnCount > columnCount) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{
+          appendDimension: {
+            sheetId: properties.sheetId,
+            dimension: "COLUMNS",
+            length: requiredColumnCount - columnCount,
+          },
+        }],
+      },
+    });
+  }
+
+  if (toAdd.length) {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        valueInputOption: "RAW",
+        data: toAdd.map(({ name, index }) => ({
+          range: `${quotedName}!${columnLetter(index)}${headerRow}`,
+          values: [[name]],
+        })),
+      },
+    });
+  }
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: headerNames.map((headerName) => {
+        const index = result.get(headerName);
+        if (index === undefined) {
+          throw new GoogleSheetsDataError(`Could not resolve column "${headerName}".`);
+        }
+        return {
+          updateDimensionProperties: {
+            range: {
+              sheetId: properties.sheetId,
+              dimension: "COLUMNS",
+              startIndex: index,
+              endIndex: index + 1,
+            },
+            properties: { hiddenByUser: true },
+            fields: "hiddenByUser",
+          },
+        };
+      }),
+    },
+  });
+
+  return result;
+}
+
+export async function ensureSheetTab(
+  spreadsheetId: string,
+  sheetName: string,
+  headers: string[],
+): Promise<void> {
+  const sheets = getGoogleSheetsClient();
+  const metadata = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets(properties(title,sheetId))",
+  });
+  const existing = metadata.data.sheets?.find(
+    (sheet) => sheet.properties?.title === sheetName,
+  );
+  if (existing?.properties?.sheetId !== undefined) {
+    const currentHeaders = await readSheetValues(spreadsheetId, `${quoteSheetName(sheetName)}!A1:Z1`);
+    if (headers.some((header, index) => currentHeaders[0]?.[index] !== header)) {
+      throw new GoogleSheetsDataError(
+        `The "${sheetName}" tab exists but does not have the expected header row.`,
+      );
+    }
+    return;
+  }
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{
+        addSheet: {
+          properties: { title: sheetName, gridProperties: { rowCount: 1000, columnCount: headers.length } },
+        },
+      }],
+    },
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${quoteSheetName(sheetName)}!A1`,
+    valueInputOption: "RAW",
+    requestBody: { values: [headers] },
+  });
 }
 
 export async function appendRecordIfMissing(

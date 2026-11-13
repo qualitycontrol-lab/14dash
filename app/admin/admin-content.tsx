@@ -528,9 +528,10 @@ type PersonRecord = {
   department: string;
   trainer: string;
   started: string;
-  goals: string[];
+  goals: TrainingGoal[];
   courses: PassportCourse[];
 };
+type TrainingGoal = { id: string; title: string };
 type RecentPerson = Pick<PersonRecord, "id" | "name" | "email" | "role" | "department">;
 type SellabilityCourseResponse = {
   id: string | number;
@@ -630,6 +631,14 @@ function isPassportCourse(value: unknown): value is PassportCourse {
   );
 }
 
+function isTrainingGoal(value: unknown): value is TrainingGoal {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.title === "string"
+  );
+}
+
 function isTttAttendanceResult(value: unknown): value is { ok: true } {
   return isRecord(value) && value.ok === true;
 }
@@ -650,13 +659,14 @@ function PeopleView() {
   const [passportPersonId, setPassportPersonId] = useState("");
   const [passportLoading, setPassportLoading] = useState(false);
   const [passportError, setPassportError] = useState<string | null>(null);
-  const [completionMonth, setCompletionMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [courseDates, setCourseDates] = useState<Record<string, string>>({});
   const [savingCourseId, setSavingCourseId] = useState<string | number | null>(null);
   const [hcaCourseTitle, setHcaCourseTitle] = useState("");
   const [hcaTeam, setHcaTeam] = useState<"bon" | "associated">("bon");
   const [hcaMonth, setHcaMonth] = useState(new Date().toISOString().slice(0, 7));
   const [assigningHcaCourse, setAssigningHcaCourse] = useState(false);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
+  const [goalsLoading, setGoalsLoading] = useState(false);
   const [sellabilityCourses, setSellabilityCourses] = useState<PassportCourse[]>([]);
   const [sellabilityPersonId, setSellabilityPersonId] = useState("");
   const [sellabilityLoading, setSellabilityLoading] = useState(true);
@@ -776,7 +786,7 @@ function PeopleView() {
       setPassportPersonId(person.id);
       try {
         const response = await fetch(
-          `/api/admin/people?name=${encodeURIComponent(person.name)}`,
+          `/api/admin/people?name=${encodeURIComponent(person.name)}&email=${encodeURIComponent(person.email)}`,
           { signal: controller.signal, cache: "no-store" },
         );
         const result: unknown = await response.json();
@@ -804,6 +814,47 @@ function PeopleView() {
     void loadPassport();
     return () => controller.abort();
   }, [selectedPerson?.id, selectedPerson?.name]);
+
+  useEffect(() => {
+    if (!selectedPerson) {
+      setGoalsLoading(false);
+      return;
+    }
+
+    const person = selectedPerson;
+    const controller = new AbortController();
+    async function loadGoals() {
+      setGoalsLoading(true);
+      try {
+        const response = await fetch(
+          `/api/admin/people/goals?email=${encodeURIComponent(person.email)}`,
+          { signal: controller.signal, cache: "no-store" },
+        );
+        const result: unknown = await response.json();
+        if (!response.ok) {
+          throw new Error(
+            isRecord(result) && typeof result.error === "string"
+              ? result.error
+              : "Unable to load training goals.",
+          );
+        }
+        if (!Array.isArray(result) || !result.every(isTrainingGoal)) {
+          throw new Error("Training goals returned invalid data.");
+        }
+        if (!controller.signal.aborted) {
+          updateSelectedPerson((current) => ({ ...current, goals: result }));
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.error("Training goals lookup failed:", error);
+        setNotice(error instanceof Error ? error.message : "Unable to load training goals.");
+      } finally {
+        if (!controller.signal.aborted) setGoalsLoading(false);
+      }
+    }
+    void loadGoals();
+    return () => controller.abort();
+  }, [selectedPerson?.id, selectedPerson?.email]);
 
   useEffect(() => {
     if (!selectedPerson) {
@@ -956,7 +1007,11 @@ function PeopleView() {
     });
   }
 
-  async function setPassportCourseStatus(course: PassportCourse, completed: boolean) {
+  async function setPassportCourseStatus(
+    course: PassportCourse,
+    completed: boolean,
+    completionDate: string,
+  ) {
     if (!selectedPerson) return;
     setSavingCourseId(course.id);
     setNotice("");
@@ -967,9 +1022,10 @@ function PeopleView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: selectedPerson.name,
+          email: selectedPerson.email,
           id: course.id,
           completed,
-          date: completed ? completionMonth : "",
+          date: completionDate,
         }),
       });
       const result: unknown = await response.json();
@@ -986,7 +1042,7 @@ function PeopleView() {
             ? {
                 ...item,
                 status: completed ? "Confirmed" : "Not Started",
-                date: completed && item.type === "CSG" ? completionMonth : "",
+                date: completed ? completionDate : "",
               }
             : item,
         ),
@@ -999,6 +1055,32 @@ function PeopleView() {
       );
     } finally {
       setSavingCourseId(null);
+    }
+  }
+
+  async function removeGoal(goal: TrainingGoal) {
+    if (!selectedPerson) return;
+    try {
+      const response = await fetch("/api/admin/people/goals", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: selectedPerson.email, id: goal.id }),
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          isRecord(result) && typeof result.error === "string"
+            ? result.error
+            : "Unable to remove the training goal.",
+        );
+      }
+      updateSelectedPerson((person) => ({
+        ...person,
+        goals: person.goals.filter((item) => item.id !== goal.id),
+      }));
+    } catch (error) {
+      console.error("Training goal deletion failed:", error);
+      setNotice(error instanceof Error ? error.message : "Unable to remove the training goal.");
     }
   }
 
@@ -1052,15 +1134,40 @@ function PeopleView() {
   function addGoal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const title = newGoalTitle.trim();
-    if (!title) return;
-    updateSelectedPerson((person) => ({ ...person, goals: [...person.goals, title] }));
-    setNewGoalTitle("");
-    setAddingGoal(false);
+    if (!title || !selectedPerson) return;
+
+    void (async () => {
+      try {
+        const response = await fetch("/api/admin/people/goals", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: selectedPerson.email,
+            name: selectedPerson.name,
+            title,
+          }),
+        });
+        const result: unknown = await response.json();
+        if (!response.ok || !isTrainingGoal(result)) {
+          throw new Error(
+            isRecord(result) && typeof result.error === "string"
+              ? result.error
+              : "Unable to save training goal.",
+          );
+        }
+        updateSelectedPerson((person) => ({ ...person, goals: [...person.goals, result] }));
+        setNewGoalTitle("");
+        setAddingGoal(false);
+      } catch (error) {
+        console.error("Training goal write failed:", error);
+        setNotice(error instanceof Error ? error.message : "Unable to save training goal.");
+      }
+    })();
   }
 
   async function copyTip() {
     if (!selectedPerson) return;
-    const tip = `${selectedPerson.name}\n${selectedPerson.email}\n${selectedPerson.role} · ${selectedPerson.department}\n${confirmedCount} trainings confirmed · ${pendingCount} awaiting confirmation\nTraining goals: ${selectedPerson.goals.join(", ") || "None"}`;
+    const tip = `${selectedPerson.name}\n${selectedPerson.email}\n${selectedPerson.role} · ${selectedPerson.department}\n${confirmedCount} trainings confirmed · ${pendingCount} awaiting confirmation\nTraining goals: ${selectedPerson.goals.map((goal) => goal.title).join(", ") || "None"}`;
     try {
       await navigator.clipboard.writeText(tip);
       setNotice("TIP summary copied to clipboard.");
@@ -1335,24 +1442,50 @@ function PeopleView() {
                           ) : typeof course.id === "string" &&
                             (course.id.startsWith("csg|") || course.id.startsWith("hca|")) ? (
                             <>
-                              {course.type === "CSG" && course.status !== "Confirmed" && (
+                              {(course.type === "CSG" || course.type === "HCA") && (
                                 <input
-                                  type="month"
-                                  aria-label={`Completion month for ${course.title}`}
-                                  value={completionMonth}
-                                  onChange={(event) => setCompletionMonth(event.target.value)}
-                                  className="h-7 w-[116px] rounded-[7px] border border-[#d8e1de] px-1 text-[9px]"
+                                  type="date"
+                                  aria-label={`Exact completion date for ${course.title}`}
+                                  value={
+                                    courseDates[String(course.id)] ??
+                                    (/^\d{4}-\d{2}-\d{2}$/.test(course.date) ? course.date : "")
+                                  }
+                                  onChange={(event) =>
+                                    setCourseDates((current) => ({
+                                      ...current,
+                                      [String(course.id)]: event.target.value,
+                                    }))
+                                  }
+                                  className="h-7 w-[130px] rounded-[7px] border border-[#d8e1de] px-1 text-[9px]"
                                 />
                               )}
                               <button
-                                disabled={savingCourseId === course.id}
-                                onClick={() => void setPassportCourseStatus(course, course.status !== "Confirmed")}
+                                disabled={
+                                  savingCourseId === course.id ||
+                                  !(courseDates[String(course.id)] ??
+                                    (/^\d{4}-\d{2}-\d{2}$/.test(course.date) ? course.date : ""))
+                                }
+                                onClick={() => {
+                                  const date =
+                                    courseDates[String(course.id)] ??
+                                    (/^\d{4}-\d{2}-\d{2}$/.test(course.date) ? course.date : "");
+                                  const needsExactDate =
+                                    course.status === "Confirmed" &&
+                                    !/^\d{4}-\d{2}-\d{2}$/.test(course.date);
+                                  void setPassportCourseStatus(
+                                    course,
+                                    course.status !== "Confirmed" || needsExactDate,
+                                    date,
+                                  );
+                                }}
                                 className="rounded-[7px] bg-[#1a7771] px-2 py-1 text-[9px] font-semibold text-white hover:bg-[#12635e] disabled:opacity-50"
                               >
                                 {savingCourseId === course.id
                                   ? "Saving…"
                                   : course.status === "Confirmed"
-                                    ? "Reopen"
+                                    ? /^\d{4}-\d{2}-\d{2}$/.test(course.date)
+                                      ? "Reopen"
+                                      : "Record exact date"
                                     : "Mark complete"}
                               </button>
                             </>
@@ -1396,23 +1529,25 @@ function PeopleView() {
               </form>
             )}
             <div className="space-y-3">
+              {goalsLoading && (
+                <p role="status" className="py-3 text-center text-xs text-[#71807c]">
+                  Loading saved goals…
+                </p>
+              )}
               {selectedPerson.goals.map((goal, index) => (
-                <div key={`${goal}-${index}`} className="flex items-center gap-3 rounded-[12px] bg-[#eff4f1] px-3 py-3">
+                <div key={goal.id} className="flex items-center gap-3 rounded-[12px] bg-[#eff4f1] px-3 py-3">
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#8cb7aa] bg-white text-xs font-semibold text-[#147e78]">{index + 1}</span>
-                  <span className="min-w-0 flex-1 text-xs font-medium text-[#344743]">{goal}</span>
+                  <span className="min-w-0 flex-1 text-xs font-medium text-[#344743]">{goal.title}</span>
                   <button
-                    aria-label={`Remove ${goal}`}
-                    onClick={() => updateSelectedPerson((person) => ({
-                      ...person,
-                      goals: person.goals.filter((_, goalIndex) => goalIndex !== index),
-                    }))}
+                    aria-label={`Remove ${goal.title}`}
+                    onClick={() => void removeGoal(goal)}
                     className="rounded p-1 text-xs text-[#a94856] hover:bg-white"
                   >
                     ×
                   </button>
                 </div>
               ))}
-              {selectedPerson.goals.length === 0 && <p className="py-6 text-center text-sm text-[#71807c]">No training goals added yet.</p>}
+              {!goalsLoading && selectedPerson.goals.length === 0 && <p className="py-6 text-center text-sm text-[#71807c]">No training goals added yet.</p>}
             </div>
           </section>
         </div>

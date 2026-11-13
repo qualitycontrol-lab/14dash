@@ -78,17 +78,24 @@ multiple Google Sheets are not transactional; if a fan-out write fails, the
 admin API reports which destinations succeeded, and retrying the same form
 submission uses its stable UUID to avoid duplicate rows.
 
-The employee passport finds records by normalized full name because the
-trackers do not yet have employee email values populated. CSG completion dates
-are stored as `M/YY`, as required by that sheet's layout. HCA assignments use
-an existing blank row in the selected month section. TTT attendance matching
-uses the session title/date and roster name; it updates the weekly TTT count
-from checked attendance rows, so retries recalculate the count rather than
-incrementing it twice. A matching session block must already exist in the
-stacked TTT attendance tab; creating new block layouts automatically is not
-supported. CSG and HCA completion edits do not yet fan out to BON weekly
-counts because their tracker dates only retain month/year, which is not enough
-to determine a weekly column reliably.
+The employee passport finds records by normalized full name and backfills
+employee email metadata when an unambiguous directory match is available.
+CSG keeps its visible `M/YY` dates and stores exact completion dates in hidden
+metadata; HCA completion dates and employee emails are also stored in hidden
+columns. CSG and HCA edits rebuild the BON weekly totals from those exact dates
+rather than incrementing counters, so retries do not double-count. Training
+goals are persisted by employee email in a `Training Goals` tab in the BON
+training progress spreadsheet.
+
+TTT attendance matching uses the session title/date and roster name; it
+updates the weekly TTT count from checked attendance rows. When a TTT training
+is started, the admin API clones the latest complete session block in the
+matching 2025 or 2026 attendance tab, resets checkboxes and walk-in names, and
+tags the new block with the request UUID. This requires at least one complete
+session block in that year's tab to use as a template. Writes to multiple
+Google Sheets are not transactional, so if any destination fails, the admin
+API reports which destinations succeeded; retrying the same submission uses
+its stable UUID to avoid duplicate training or attendance records.
 
 The Reporting section reads attendance entries from the configured Google
 Sheet, with date-filtered summaries and CSV export.

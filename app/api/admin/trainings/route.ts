@@ -4,12 +4,17 @@ import { isAdminEmail } from "@/lib/auth";
 import {
   appendRecordIfMissing,
   ensureIdColumn,
+  ensureHiddenColumns,
   findHeaderIndex,
+  columnLetter,
+  getGoogleSheetsClient,
   getSpreadsheetId,
   GoogleSheetsConfigurationError,
   GoogleSheetsDataError,
   readCell,
+  readSheetValues,
   readSheetTable,
+  quoteSheetName,
   type AdminSpreadsheet,
   type SheetTable,
 } from "@/lib/google-sheets";
@@ -172,6 +177,190 @@ async function appendTraining(
   );
 }
 
+function isTttSessionBanner(row: string[]): boolean {
+  return (
+    Boolean(row[0]?.trim()) &&
+    !row[1]?.trim() &&
+    /\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:,?\s+20\d{2})?/i.test(
+      row[0],
+    )
+  );
+}
+
+async function createTttAttendanceBlock(record: {
+  title: string;
+  date: string;
+  requestId: string;
+}): Promise<void> {
+  const year = Number(record.date.slice(0, 4));
+  if (year !== 2025 && year !== 2026) {
+    throw new GoogleSheetsDataError(
+      "TTT attendance blocks can currently be created for 2025 and 2026 only.",
+    );
+  }
+
+  const spreadsheetId = getSpreadsheetId("tttSystem");
+  const sheetName = `${year} TTT Attendance`;
+  await ensureHiddenColumns(
+    spreadsheetId,
+    sheetName,
+    1,
+    ["Session UUID / Employee Email"],
+    10,
+  );
+  const values = await readSheetValues(
+    spreadsheetId,
+    `${quoteSheetName(sheetName)}!A:K`,
+  );
+  if (values.some((row) => row[10] === record.requestId)) return;
+
+  const sessionRows = values.flatMap((row, index) =>
+    isTttSessionBanner(row) ? [index] : [],
+  );
+  if (!sessionRows.length) {
+    throw new GoogleSheetsDataError(
+      `The "${sheetName}" sheet has no session block to use as a template.`,
+    );
+  }
+  const sourceStart = sessionRows[sessionRows.length - 1];
+  const sourceEnd = values.length;
+  const blockLength = sourceEnd - sourceStart;
+  if (
+    blockLength < 4 ||
+    !values.slice(sourceStart, sourceEnd).some((row) =>
+      (row[0] ?? "").trim().toLowerCase() === "last name" &&
+      (row[1] ?? "").trim().toLowerCase() === "first name",
+    )
+  ) {
+    throw new GoogleSheetsDataError(
+      `The final "${sheetName}" session block is incomplete and cannot be used as a template.`,
+    );
+  }
+
+  const metadata = await getGoogleSheetsClient().spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets(properties(sheetId,title),merges)",
+  });
+  const sheet = metadata.data.sheets?.find(
+    (candidate) => candidate.properties?.title === sheetName,
+  );
+  if (!sheet || sheet.properties?.sheetId === undefined) {
+    throw new GoogleSheetsDataError(`The "${sheetName}" tab was not found.`);
+  }
+  const sheetId = sheet.properties.sheetId;
+  const copiedMerges = (sheet.merges ?? []).filter(
+    (merge) =>
+      merge.startRowIndex !== undefined &&
+      merge.startRowIndex !== null &&
+      merge.endRowIndex !== undefined &&
+      merge.endRowIndex !== null &&
+      merge.startRowIndex >= sourceStart &&
+      merge.endRowIndex <= sourceEnd,
+  );
+  const insertionIndex = values.length;
+  const targetIndex = insertionIndex;
+  const targetTitle = `${record.title} - ${new Intl.DateTimeFormat("en", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${record.date}T00:00:00Z`))}`;
+  const mergeRequests = copiedMerges.map((merge) => ({
+    mergeCells: {
+      range: {
+        sheetId,
+        startRowIndex: targetIndex + (merge.startRowIndex ?? sourceStart) - sourceStart,
+        endRowIndex: targetIndex + (merge.endRowIndex ?? sourceStart) - sourceStart,
+        startColumnIndex: merge.startColumnIndex,
+        endColumnIndex: merge.endColumnIndex,
+      },
+      mergeType: "MERGE_ALL" as const,
+    },
+  }));
+  const metadataColumn = 10;
+
+  await getGoogleSheetsClient().spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        {
+          insertDimension: {
+            range: {
+              sheetId,
+              dimension: "ROWS",
+              startIndex: insertionIndex,
+              endIndex: insertionIndex + blockLength,
+            },
+            inheritFromBefore: false,
+          },
+        },
+        {
+          copyPaste: {
+            source: {
+              sheetId,
+              startRowIndex: sourceStart,
+              endRowIndex: sourceEnd,
+              startColumnIndex: 0,
+              endColumnIndex: 11,
+            },
+            destination: {
+              sheetId,
+              startRowIndex: targetIndex,
+              endRowIndex: targetIndex + blockLength,
+              startColumnIndex: 0,
+              endColumnIndex: 11,
+            },
+            pasteType: "PASTE_NORMAL",
+            pasteOrientation: "NORMAL",
+          },
+        },
+        ...mergeRequests,
+      ],
+    },
+  });
+
+  const clonedRows = values.slice(sourceStart, sourceEnd);
+  const cellUpdates: Array<{ range: string; values: Array<Array<string | boolean>> }> = [
+    {
+      range: `${quoteSheetName(sheetName)}!A${targetIndex + 1}`,
+      values: [[targetTitle]],
+    },
+    {
+      range: `${quoteSheetName(sheetName)}!${columnLetter(metadataColumn)}${targetIndex + 1}`,
+      values: [[record.requestId]],
+    },
+  ];
+  clonedRows.forEach((row, offset) => {
+    const targetRow = targetIndex + offset + 1;
+    const lastName = (row[0] ?? "").trim();
+    const firstName = (row[1] ?? "").trim();
+    if (
+      lastName &&
+      firstName &&
+      lastName.toLowerCase() !== "last name" &&
+      firstName.toLowerCase() !== "first name"
+    ) {
+      cellUpdates.push({
+        range: `${quoteSheetName(sheetName)}!F${targetRow}`,
+        values: [[false]],
+      });
+    }
+    if (
+      (row[7] ?? "").trim() &&
+      (row[7] ?? "").trim().toLowerCase() !== "additional attendees:"
+    ) {
+      cellUpdates.push({
+        range: `${quoteSheetName(sheetName)}!H${targetRow}`,
+        values: [[""]],
+      });
+    }
+  });
+  await getGoogleSheetsClient().spreadsheets.values.batchUpdate({
+    spreadsheetId,
+    requestBody: { valueInputOption: "USER_ENTERED", data: cellUpdates },
+  });
+}
+
 function isTrainingType(value: unknown): value is TrainingType {
   return typeof value === "string" && value in typeNames;
 }
@@ -274,6 +463,10 @@ export async function POST(request: Request) {
     for (const [spreadsheet, tab, fallbackType] of destinations) {
       await appendTraining(spreadsheet, tab, record, fallbackType);
       completedDestinations.push(tab);
+    }
+    if (record.type === "TTT") {
+      await createTttAttendanceBlock(record);
+      completedDestinations.push(`${record.date.slice(0, 4)} TTT Attendance`);
     }
     return noStoreJson({
       training: {
